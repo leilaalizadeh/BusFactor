@@ -1,0 +1,6 @@
+streamlit>=1.46
+pydantic>=2
+pdfplumber
+pytest
+python-dotenv
+anthropic

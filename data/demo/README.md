@@ -9,6 +9,9 @@ No real students, patients or results are described. Owner: Teammate 1.
 | `project.json` | key `project`: 1 project, P01 | `Project` |
 | `members.json` | key `members`: M01–M04, all consents true | `Member` |
 | `decisions.json` | key `decisions`: D01–D05, all `verified` | `DecisionCard` |
+| `questions.json` | key `questions`: the 12 seeded Why? questions | `InterviewQuestion` |
+| `evidence.json` | key `evidence`: 12 invented answers matching the brief's starting-evidence table | `AssessmentEvidence` |
+| `question_bank.json` | key `decisions`: demo questions, transfer questions and keyword rubric per decision | — |
 
 Every JSON file has a top-level `"_note": "SYNTHETIC DEMO DATA ..."`. Load the list under its key:
 
