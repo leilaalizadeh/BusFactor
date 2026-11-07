@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- BusFactor landing page. Open this file in a browser; "Open the demo" goes to the Streamlit app (run: streamlit run app.py). -->
+<title>BusFactor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one calm column; the hero pairs the thesis with a live 3D map of who can explain which decision. */
+:root {
+  --bg: #F6F7F9;
+  --surface: #FFFFFF;
+  --fg: #141821;
+  --muted: #5D6472;
+  --line: #E0E4EB;
+  --accent: #2F4FD8;
+  --risk: #D6453B;
+  --ok: #1E9A62;
+  --idle: #A3AAB7;
+  --font-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1116; --surface: #151922; --fg: #E7E9EE; --muted: #98A0AE; --line: #252B36;
+    --accent: #7D93FF; --risk: #FF6B5F; --ok: #3FCB8A; --idle: #5B6372; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1116; --surface: #151922; --fg: #E7E9EE; --muted: #98A0AE; --line: #252B36;
+  --accent: #7D93FF; --risk: #FF6B5F; --ok: #3FCB8A; --idle: #5B6372; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 400 1rem/1.6 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+/* header */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px; }
+.mark { display: flex; align-items: center; gap: 10px; font: 700 1.15rem/1 var(--font-display); letter-spacing: -0.01em; }
+.mark svg { width: 22px; height: 22px; }
+.tag {
+  font: 500 0.72rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px;
+}
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 48px; align-items: center; padding-block: 40px 64px; }
+.eyebrow { font: 500 0.75rem/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 18px; }
+h1 {
+  font: 700 clamp(2.3rem, 5vw, 3.6rem)/1.04 var(--font-display);
+  letter-spacing: -0.025em; margin: 0 0 22px; text-wrap: balance;
+}
+h1 span { color: var(--accent); }
+.lede { color: var(--muted); font-size: 1.08rem; max-width: 34rem; margin: 0 0 32px; }
+.stats { display: flex; gap: 0; border-top: 1px solid var(--line); max-width: 30rem; }
+.stat { flex: 1; padding: 18px 0 0; }
+.stat + .stat { padding-left: 24px; border-left: 1px solid var(--line); margin-left: 24px; }
+.stat dt { font: 500 0.72rem/1.3 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.stat dd { margin: 6px 0 0; font: 700 2rem/1 var(--font-display); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.stat dd small { font: 400 0.85rem/1 var(--font-body); color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+#cov-now { transition: color .4s ease; }
+#cov-now.up { color: var(--ok); }
+.note { font-size: 0.8rem; color: var(--muted); margin: 14px 0 0; }
+
+/* scene */
+.scene {
+  position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  overflow: hidden; display: grid; grid-template-rows: auto auto;
+}
+.stage { position: relative; aspect-ratio: 1 / 0.86; max-width: 100%; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.lbl {
+  position: absolute; transform: translate(-50%, 0); white-space: nowrap;
+  font: 500 0.7rem/1 var(--font-mono); color: var(--muted); letter-spacing: 0.02em;
+}
+.lbl.member { color: var(--fg); font-family: var(--font-body); font-size: 0.78rem; }
+.fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font-size: 0.9rem; }
+.bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  border-top: 1px solid var(--line); padding: 14px 18px;
+}
+#phase { margin: 0; font-size: 0.9rem; min-height: 2.9em; flex: 1 1 260px; min-width: 0; }
+.ctrl {
+  font: 500 0.78rem/1 var(--font-body); color: var(--fg); background: transparent;
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer;
+}
+.ctrl:hover { border-color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0 18px 16px; font-size: 0.78rem; color: var(--muted); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg); margin-right: 8px; vertical-align: 1px; }
+
+/* sections */
+section { padding-block: 56px; border-top: 1px solid var(--line); }
+h2 { font: 700 1.6rem/1.2 var(--font-display); letter-spacing: -0.015em; margin: 0 0 8px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 32px; max-width: 40rem; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; counter-reset: s; }
+.steps li { counter-increment: s; min-width: 0; }
+.steps li::before {
+  content: counter(s); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--line); font: 500 0.78rem/1 var(--font-mono); color: var(--accent); margin-bottom: 14px;
+}
+.steps h3 { font: 600 0.98rem/1.3 var(--font-body); margin: 0 0 6px; }
+.steps p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; margin: 0; padding: 0; list-style: none; }
+.rules li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.rules svg { width: 18px; height: 18px; margin-top: 3px; color: var(--ok); }
+.rules b { font-weight: 600; display: block; }
+.rules span { color: var(--muted); font-size: 0.92rem; }
+footer { border-top: 1px solid var(--line); padding-block: 28px 40px; display: flex; flex-wrap: wrap; gap: 12px 32px; justify-content: space-between; color: var(--muted); font-size: 0.85rem; }
+code { font: 500 0.82rem/1 var(--font-mono); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding-block: 20px 48px; }
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rules { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  .stage { aspect-ratio: 1 / 1; }
+  .tag { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { #cov-now { transition: none; } }
+
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 32px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 600 0.95rem/1 var(--font-body); text-decoration: none;
+       border-radius: 10px; padding: 13px 18px; border: 1px solid var(--line); color: var(--fg); background: var(--surface); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:hover { filter: brightness(1.05); }
+</style>
+<style>body{margin:0}</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="mark">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="5" cy="6" r="2.4" fill="currentColor"/><circle cx="19" cy="6" r="2.4" fill="currentColor"/>
+        <circle cx="5" cy="18" r="2.4" fill="currentColor"/><circle cx="19" cy="18" r="2.4" fill="currentColor"/>
+        <path d="M12 8.5 15.5 12 12 15.5 8.5 12Z" fill="var(--accent)"/>
+        <path d="M7 7.3 10 10.3M17 7.3 14 10.3M7 16.7l3-3M17 16.7l-3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      BusFactor
+    </div>
+    <span class="tag">Reply Student Tech Clash 2026</span>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <p class="eyebrow">AI on Campus · group projects</p>
+        <h1>You split the work. <span>Don't split the understanding.</span></h1>
+        <p class="lede">BusFactor finds the project decisions only one teammate can explain, pairs them with a teammate who can teach it, and checks with a new question that the knowledge really moved.</p>
+        <div class="actions">
+          <a class="btn primary" href="http://localhost:8501">Open the demo</a>
+          <a class="btn" href="#how">How it works</a>
+        </div>
+        <dl class="stats">
+          <div class="stat"><dt>Coverage before</dt><dd>1/5<small>20%</small></dd></div>
+          <div class="stat"><dt>After one mission</dt><dd id="cov-now">1/5<small>20%</small></dd></div>
+        </dl>
+        <p class="note">Numbers from the demo project. All demo data is fictional.</p>
+      </div>
+
+      <figure class="scene" style="margin:0">
+        <div class="stage" id="stage" role="img" aria-label="Four team members around five project decisions. Lines show who can explain each decision. Decision D03 starts with one explainer; after Member B teaches Member D it has two.">
+          <div class="labels" id="labels"></div>
+        </div>
+        <div class="bar">
+          <p id="phase" aria-live="polite">Lines show who can explain each decision. Red decisions depend on one person.</p>
+          <button class="ctrl" id="toggle" type="button">Pause</button>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--ok)"></i>Two or more can explain</span>
+          <span><i style="background:var(--risk)"></i>Only one can explain</span>
+          <span><i style="background:var(--idle)"></i>Nobody yet</span>
+        </div>
+      </figure>
+    </div>
+
+    <section id="how">
+      <h2>How it works</h2>
+      <p class="sub">One loop, run on the team's own project file. Every step is saved and shown in an action log.</p>
+      <ol class="steps">
+        <li><h3>Find the decisions</h3><p>Five key decisions are pulled from the report, each with a quote checked against its page.</p></li>
+        <li><h3>Ask privately</h3><p>Each member answers "why" and "what if" questions about parts they didn't build. Scores 0 to 2, seen only by them.</p></li>
+        <li><h3>Spot the risk</h3><p>A decision only one person can explain is a single point of failure.</p></li>
+        <li><h3>Teach each other</h3><p>Someone who understands it teaches someone who doesn't, if both agree.</p></li>
+        <li><h3>Check again</h3><p>The learner gets a new question with no hints. A score of 2 raises team coverage.</p></li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Rules enforced in the code</h2>
+      <p class="sub">These hold even if the AI model gets something wrong. Each one has an automated test.</p>
+      <ul class="rules">
+        <li><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 10.5 4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>No invented sources</b><span>A decision without a quote on its cited page is never assessed.</span></div></li>
+        <li><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 10.5 4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Answers stay private</b><span>Members see only their own answers. The team view shows counts, never names or scores.</span></div></li>
+        <li><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 10.5 4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Both people agree</b><span>A teaching session starts only when mentor and learner both accept.</span></div></li>
+        <li><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 10.5 4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>No pretend mentors</b><span>If nobody can explain a decision, BusFactor points to the course material or the TA.</span></div></li>
+        <li><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 10.5 4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>No answers in the retest</b><span>"Just give me the answer" is refused, in English or Italian.</span></div></li>
+        <li><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 10.5 4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Coverage moves on evidence only</b><span>It goes up only when a learner scores 2 on a new question.</span></div></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <span>Built by a team of four · Python, Streamlit, SQLite, Claude</span>
+    <span>Run locally: <code>streamlit run app.py</code></span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  const stage = document.getElementById("stage");
+  const labelLayer = document.getElementById("labels");
+  const phaseEl = document.getElementById("phase");
+  const covEl = document.getElementById("cov-now");
+  const toggle = document.getElementById("toggle");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const PHASES = [
+    [0,    "Lines show who can explain each decision. Red decisions depend on one person."],
+    [2.6,  "Member B can explain D03 (why F1, not accuracy). Member D can't yet, so B teaches D."],
+    [6.2,  "Member D answers a new \"what if\" question alone, with no hints, and scores 2/2."],
+    [8.4,  "D03 now has two explainers. Team coverage goes from 1/5 to 2/5."],
+  ];
+  const LOOP = 14;
+
+  function setCoverage(after) {
+    covEl.innerHTML = after ? "2/5<small>40%</small>" : "1/5<small>20%</small>";
+    covEl.classList.toggle("up", after);
+  }
+
+  if (typeof THREE === "undefined" || !window.WebGLRenderingContext) {
+    stage.insertAdjacentHTML("beforeend", '<div class="fallback">The 3D view needs WebGL. In the demo, Member B teaches Member D, and coverage goes from 1/5 to 2/5.</div>');
+    setCoverage(true);
+    phaseEl.textContent = PHASES[3][1];
+    toggle.hidden = true;
+    return;
+  }
+
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  } catch (e) {
+    stage.insertAdjacentHTML("beforeend", '<div class="fallback">The 3D view could not start. In the demo, coverage goes from 1/5 to 2/5.</div>');
+    setCoverage(true); toggle.hidden = true; return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.insertBefore(renderer.domElement, labelLayer);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  camera.position.set(0, 0.4, 9.2);
+  camera.lookAt(0, 0, 0);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.55);
+  sun.position.set(3, 5, 6);
+  scene.add(sun);
+
+  const world = new THREE.Group();
+  scene.add(world);
+
+  // ---- data (matches the demo scenario) ----
+  const MEMBERS = [
+    { id: "M01", name: "Member A", a: 135 }, { id: "M02", name: "Member B", a: 45 },
+    { id: "M03", name: "Member C", a: 225 }, { id: "M04", name: "Member D", a: 315 },
+  ];
+  const DECISIONS = ["D01", "D02", "D03", "D04", "D05"];
+  const EXPLAINERS = { D01: ["M01", "M03"], D02: ["M02"], D03: ["M02"], D04: ["M03"], D05: [] };
+
+  const rad = d => d * Math.PI / 180;
+  const pos = {};
+  MEMBERS.forEach((m, i) => {
+    pos[m.id] = new THREE.Vector3(Math.cos(rad(m.a)) * 3.3, Math.sin(rad(m.a)) * 2.35, (i % 2 ? 0.5 : -0.5));
+  });
+  // each decision sits near the people who can explain it, so lines cross as little as possible
+  const D_ANGLE = { D01: 180, D02: 62, D03: -8, D04: 252, D05: 118 };
+  DECISIONS.forEach((d, i) => {
+    const a = rad(D_ANGLE[d]);
+    pos[d] = new THREE.Vector3(Math.cos(a) * 1.4, Math.sin(a) * 1.25, (i % 2 ? -0.35 : 0.35));
+  });
+
+  // ---- theme ----
+  const C = {};
+  function readTheme() {
+    const s = getComputedStyle(document.documentElement);
+    ["fg", "muted", "line", "accent", "risk", "ok", "idle", "surface"].forEach(k => {
+      C[k] = new THREE.Color(s.getPropertyValue("--" + k).trim() || "#888888");
+    });
+  }
+  readTheme();
+
+  // ---- meshes ----
+  const memberGeo = new THREE.SphereGeometry(0.3, 40, 20);
+  const decisionGeo = new THREE.OctahedronGeometry(0.24, 0);
+  const memberMeshes = {}, decisionMeshes = {};
+  MEMBERS.forEach(m => {
+    const mesh = new THREE.Mesh(memberGeo, new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.05 }));
+    mesh.position.copy(pos[m.id]);
+    world.add(mesh); memberMeshes[m.id] = mesh;
+  });
+  DECISIONS.forEach(d => {
+    const mesh = new THREE.Mesh(decisionGeo, new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.1, flatShading: true }));
+    mesh.position.copy(pos[d]);
+    world.add(mesh); decisionMeshes[d] = mesh;
+  });
+
+  function lineBetween(a, b) {
+    const g = new THREE.BufferGeometry().setFromPoints([a.clone(), b.clone()]);
+    const l = new THREE.Line(g, new THREE.LineBasicMaterial({ transparent: true, opacity: 0.6 }));
+    world.add(l); return l;
+  }
+  const edges = [];
+  Object.entries(EXPLAINERS).forEach(([d, ms]) => ms.forEach(m => edges.push(lineBetween(pos[m], pos[d]))));
+  const newEdge = lineBetween(pos.M04, pos.M04);   // grows toward D03 during the story
+
+  // teaching pulse: small particles along an arc from Member B to Member D
+  const arcMid = pos.M02.clone().add(pos.M04).multiplyScalar(0.5).add(new THREE.Vector3(0.75, 0, 0.9));
+  const arc = new THREE.QuadraticBezierCurve3(pos.M02, arcMid, pos.M04);
+  const arcLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(arc.getPoints(48)),
+    new THREE.LineDashedMaterial({ dashSize: 0.12, gapSize: 0.1, transparent: true, opacity: 0 }));
+  arcLine.computeLineDistances(); world.add(arcLine);
+  const sparks = [0, 1, 2].map(() => {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }));
+    world.add(s); return s;
+  });
+
+  function applyColors() {
+    MEMBERS.forEach(m => memberMeshes[m.id].material.color.copy(C.fg));
+    edges.forEach(e => e.material.color.copy(C.muted));
+    newEdge.material.color.copy(C.ok);
+    arcLine.material.color.copy(C.accent);
+    sparks.forEach(s => s.material.color.copy(C.accent));
+  }
+  applyColors();
+
+  function decisionColor(d, d03Progress) {
+    const n = EXPLAINERS[d].length;
+    if (d === "D03") return C.risk.clone().lerp(C.ok, d03Progress);
+    return n >= 2 ? C.ok : n === 1 ? C.risk : C.idle;
+  }
+
+  // ---- labels ----
+  const labels = [];
+  MEMBERS.forEach(m => labels.push({ el: mk(m.name, "member"), at: pos[m.id], dy: 0.52 }));
+  DECISIONS.forEach(d => labels.push({ el: mk(d, ""), at: pos[d], dy: 0.4 }));
+  function mk(text, cls) {
+    const el = document.createElement("div");
+    el.className = "lbl " + cls; el.textContent = text; labelLayer.appendChild(el); return el;
+  }
+  const tmp = new THREE.Vector3();
+  function placeLabels(w, h) {
+    labels.forEach(L => {
+      tmp.copy(L.at); tmp.y -= L.dy; tmp.applyMatrix4(world.matrixWorld).project(camera);
+      L.el.style.left = ((tmp.x + 1) / 2 * w) + "px";
+      L.el.style.top = ((1 - tmp.y) / 2 * h) + "px";
+    });
+  }
+
+  // ---- sizing ----
+  let W = 1, H = 1;
+  function resize() {
+    W = stage.clientWidth || 1; H = stage.clientHeight || 1;
+    renderer.setSize(W, H, false);
+    camera.aspect = W / H;
+    camera.position.z = W < 420 ? 11 : 9.2;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  // ---- story timeline ----
+  const ease = x => x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x);
+  let lastPhase = -1, covAfter = null;
+
+  function setState(t) {
+    const teach = ease((t - 2.6) / 0.6) * (1 - ease((t - 6.0) / 0.5));
+    arcLine.material.opacity = 0.7 * teach;
+    sparks.forEach((s, i) => {
+      const u = ((t - 2.6) * 0.42 + i / 3) % 1;
+      s.position.copy(arc.getPoint(Math.max(0, u)));
+      s.material.opacity = teach;
+    });
+    const grow = ease((t - 6.2) / 1.4);
+    const end = pos.M04.clone().lerp(pos.D03, grow);
+    newEdge.geometry.setFromPoints([pos.M04, end]);
+    newEdge.material.opacity = grow > 0 ? 0.9 : 0;
+    const d03 = ease((t - 7.6) / 0.8);
+    DECISIONS.forEach(d => decisionMeshes[d].material.color.copy(decisionColor(d, d03)));
+    const pulse = 1 + 0.18 * Math.sin(Math.min(1, Math.max(0, (t - 7.6) / 0.8)) * Math.PI);
+    decisionMeshes.D03.scale.setScalar(pulse);
+
+    let p = 0; PHASES.forEach((ph, i) => { if (t >= ph[0]) p = i; });
+    if (p !== lastPhase) { phaseEl.textContent = PHASES[p][1]; lastPhase = p; }
+    const after = t >= 8.0;
+    if (after !== covAfter) { setCoverage(after); covAfter = after; }
+  }
+
+  let playing = !reduce, clock = 0, prev = performance.now();
+  if (reduce) { toggle.textContent = "Play"; }
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+    if (playing) clock = (clock + dt) % LOOP;
+    const t = reduce && !playing ? LOOP - 0.5 : clock;   // reduced motion rests on the final state
+    world.rotation.y = playing ? Math.sin(now / 5200) * 0.32 : 0.18;
+    world.rotation.x = playing ? Math.sin(now / 7300) * 0.06 : 0.02;
+    DECISIONS.forEach((d, i) => { decisionMeshes[d].rotation.y = playing ? now / 2400 + i : i; });
+    setState(t);
+    world.updateMatrixWorld();
+    renderer.render(scene, camera);
+    placeLabels(W, H);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  toggle.addEventListener("click", () => {
+    playing = !playing;
+    if (playing && reduce) clock = 0;
+    toggle.textContent = playing ? "Pause" : "Play";
+  });
+
+  // follow theme changes (system setting or explicit toggle)
+  const refresh = () => { readTheme(); applyColors(); };
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refresh);
+  new MutationObserver(refresh).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+})();
+</script>
+
+</body>
+</html>
