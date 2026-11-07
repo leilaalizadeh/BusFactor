@@ -122,14 +122,3 @@ the course material or asking the TA.
 - There is no login. "Who are you?" is just a dropdown for the demo. Answers are protected in the database code,
   not by user accounts.
 - We have not measured any learning results. The demo only shows how the process works.
-
-## 60-second pitch
-
-> Raise your hand if you've done a group project where you couldn't explain a teammate's part. *(pause)* We split
-> the work so well that each of us understands only our own piece. The project succeeds, the grade is shared, but
-> the knowledge stays fragmented — until the oral defense exposes it. **BusFactor** fixes that. Our AI reads the
-> project's key decisions and privately asks each teammate to defend the ones they didn't make. It finds the
-> decisions only one person can explain — our knowledge single points of failure — and turns each one into a
-> peer-teaching mission between teammates. Then it asks a new "what if" question, with no hints, to check that
-> understanding really transferred. We don't use AI to do the teamwork. **We use AI to turn divided work into
-> shared understanding.**
