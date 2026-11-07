@@ -1,0 +1,75 @@
+{
+  "_note": "SYNTHETIC DEMO DATA — fixed questions and a keyword rubric so DEMO_MODE runs offline. The keyword scorer is a demo stand-in for the LLM grader, not a validated assessment.",
+  "decisions": {
+    "D01": {
+      "why": "Why did the team remove duplicate images and impute missing labels before training, instead of training on the raw data?",
+      "what_if": "What if the team had kept the 310 duplicate images? What would happen to the reported test F1, and why?",
+      "transfer": [
+        "Imagine a new batch where the same patient appears in several images. How would you split or clean the data, and why?",
+        "What if half of the missing labels could not be recovered from the radiologist's notes? What would you do with those images, and why?"
+      ],
+      "hint": "Think about what the model is allowed to see before it is tested.",
+      "rubric": [
+        {"point": "Duplicates can leak between the training and test sets", "keywords": ["leak", "both the training and the test", "train and test", "in both", "seen the test", "contaminat"]},
+        {"point": "Leakage inflates the scores (over-optimistic results)", "keywords": ["inflate", "optimistic", "too high", "overestimat", "unrealistic"]},
+        {"point": "Imputing labels from radiologist notes keeps usable images", "keywords": ["imput", "radiologist", "throw away", "kept more images", "lose data", "losing data"]}
+      ]
+    },
+    "D02": {
+      "why": "Why did the team use Random Forest instead of Logistic Regression as the baseline?",
+      "what_if": "What if the hospital required that every prediction be easy to explain to a doctor? Would the Random Forest choice still hold? Why?",
+      "transfer": [
+        "What if the features were already engineered so that the two classes were almost linearly separable? Which baseline would you pick now, and why?",
+        "What if training time had to stay under one second on a laptop? Would you still start from Random Forest? Why?"
+      ],
+      "hint": "Think about what kind of relationships each model can represent.",
+      "rubric": [
+        {"point": "Random Forest captures non-linear interactions between features", "keywords": ["non-linear", "nonlinear", "interaction", "linearly separable", "complex relationship"]},
+        {"point": "No manual feature engineering needed", "keywords": ["feature engineering", "engineered", "handcraft", "hand-craft", "manual feature"]},
+        {"point": "Tradeoff: Logistic Regression is faster/more interpretable but scored lower", "keywords": ["interpret", "faster", "simpler", "explain", "scored lower", "lower on validation", "validation"]}
+      ]
+    },
+    "D03": {
+      "why": "Why did the team report F1 instead of accuracy as the headline metric?",
+      "what_if": "What if the dataset were balanced, with 50% of images showing a finding? Would F1 still be clearly better than accuracy? Why?",
+      "transfer": [
+        "What if missing a finding (a false negative) became 10 times more costly than a false alarm? Which metric would you report, and why?",
+        "What if the test set contained only 2% positive images? How would that change what accuracy and F1 tell you?"
+      ],
+      "hint": "Think about what the share of 'finding' images does to each metric.",
+      "rubric": [
+        {"point": "Class imbalance: only about 12% of images show a finding", "keywords": ["imbalance", "imbalanced", "12%", "minority", "rare", "few positive", "balanced"]},
+        {"point": "Accuracy is misleading: always predicting 'no finding' gives about 88%", "keywords": ["88", "always predict", "misleading", "majority class", "predicts no finding"]},
+        {"point": "F1 is built on precision and recall of the positive class", "keywords": ["precision", "recall", "false negative", "false positive", "positive class", "f2"]}
+      ]
+    },
+    "D04": {
+      "why": "Why did the team use a stratified train/validation/test split instead of a purely random split?",
+      "what_if": "What if the dataset had 50,000 images instead of 4,200? Would stratification still matter as much? Why?",
+      "transfer": [
+        "What if you had to use 5-fold cross-validation instead of one fixed split? What would you do about the folds, and why?",
+        "What if a new test set had to be only 100 images? How would you build it, and why?"
+      ],
+      "hint": "Think about how many positive images end up in a small test set.",
+      "rubric": [
+        {"point": "Stratification keeps the same share of positives in every subset", "keywords": ["same share", "same proportion", "same ratio", "class distribution", "stratif", "each fold", "every fold"]},
+        {"point": "A random split could leave a small test set with very few positives", "keywords": ["few positive", "random split", "by chance", "small test", "no positive"]},
+        {"point": "Otherwise the F1 estimate is unstable/unreliable", "keywords": ["unstable", "variance", "unreliable", "noisy", "fluctuat", "comparable"]}
+      ]
+    },
+    "D05": {
+      "why": "Why did the team report that the model was not tested on images from other hospitals?",
+      "what_if": "What if another hospital wanted to use the model tomorrow? What would you tell them, and why?",
+      "transfer": [
+        "What if a second hospital's images gave F1 = 0.50? How would you explain the drop, and what would you do next?",
+        "What if the same hospital bought a new scanner? Would you trust the model on the new images? Why?"
+      ],
+      "hint": "Think about where all the training images came from.",
+      "rubric": [
+        {"point": "All images come from one hospital and one scanner type", "keywords": ["one hospital", "single hospital", "one scanner", "same scanner", "single site", "same hospital"]},
+        {"point": "So the team cannot claim the model generalises to other scanners/populations", "keywords": ["generali", "other hospitals", "different scanner", "population", "dataset shift", "distribution shift", "domain shift"]},
+        {"point": "External validation on another hospital's data is needed", "keywords": ["external validation", "validate on", "another hospital", "external data", "test on other", "new hospital"]}
+      ]
+    }
+  }
+}
