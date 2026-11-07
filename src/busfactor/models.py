@@ -1,5 +1,4 @@
-# TEMPORARY COPY of brief section 5 so Teammate 1's code can run.
-# Teammate 4 owns this file: replace it with their committed version (it must be identical).
+# Shared contracts: EXACTLY brief section 5. Do not edit without telling the whole team.
 from __future__ import annotations
 from datetime import datetime
 from enum import Enum
