@@ -1,0 +1,9 @@
+{
+  "_note": "SYNTHETIC DEMO DATA — pseudonymous demo members, not real students",
+  "members": [
+    {"id": "M01", "project_id": "P01", "display_name": "Member A", "consent_assessment": true, "consent_mentor": true, "consent_learner": true},
+    {"id": "M02", "project_id": "P01", "display_name": "Member B", "consent_assessment": true, "consent_mentor": true, "consent_learner": true},
+    {"id": "M03", "project_id": "P01", "display_name": "Member C", "consent_assessment": true, "consent_mentor": true, "consent_learner": true},
+    {"id": "M04", "project_id": "P01", "display_name": "Member D", "consent_assessment": true, "consent_mentor": true, "consent_learner": true}
+  ]
+}

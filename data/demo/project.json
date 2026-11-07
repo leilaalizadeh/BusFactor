@@ -1,0 +1,9 @@
+{
+  "_note": "SYNTHETIC DEMO DATA — fictional project for the BusFactor demo",
+  "project": {
+    "id": "P01",
+    "title": "Classifying medical images",
+    "course": "Machine Learning (group project)",
+    "source_files": ["data/demo/project_report.md"]
+  }
+}

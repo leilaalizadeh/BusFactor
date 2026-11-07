@@ -1,0 +1,75 @@
+{
+  "_note": "SYNTHETIC DEMO DATA — every quote is an exact substring of the cited page of data/demo/project_report.md (pages split on '---' lines, numbered from 1)",
+  "decisions": [
+    {
+      "id": "D01",
+      "project_id": "P01",
+      "title": "Remove duplicate images and impute missing labels before training",
+      "rationale": "Duplicate images could leak between the training and test sets and inflate the scores; missing labels were imputed from clear radiologist notes so that usable images were not thrown away.",
+      "alternatives": ["Keep duplicates and train on the raw data", "Drop every image with a missing label"],
+      "concept_ids": ["data_leakage", "data_cleaning", "label_imputation"],
+      "importance": "critical",
+      "owner_id": "M01",
+      "source_refs": [
+        {"file": "data/demo/project_report.md", "page": 1, "section": "2. Data preparation", "quote": "We removed duplicate images and imputed missing labels before training, because duplicates could leak between the training and test sets and inflate our scores."}
+      ],
+      "review_status": "verified"
+    },
+    {
+      "id": "D02",
+      "project_id": "P01",
+      "title": "Use Random Forest instead of Logistic Regression as baseline",
+      "rationale": "Random Forest captures non-linear interactions between features without manual feature engineering; Logistic Regression was faster and more interpretable but scored clearly lower on validation.",
+      "alternatives": ["Logistic Regression"],
+      "concept_ids": ["baseline_model", "non_linearity", "interpretability"],
+      "importance": "critical",
+      "owner_id": "M02",
+      "source_refs": [
+        {"file": "data/demo/project_report.md", "page": 2, "section": "3. Model selection", "quote": "We chose Random Forest instead of Logistic Regression as our baseline because it captured non-linear interactions between features without manual feature engineering."}
+      ],
+      "review_status": "verified"
+    },
+    {
+      "id": "D03",
+      "project_id": "P01",
+      "title": "Use F1 instead of accuracy as headline metric (class imbalance)",
+      "rationale": "With about 12% positive images, a model that always predicts 'no finding' reaches about 88% accuracy while detecting nothing; F1 combines precision and recall on the minority class, so it only rises when positives are actually found.",
+      "alternatives": ["Accuracy"],
+      "concept_ids": ["class_imbalance", "precision_recall", "f1_score"],
+      "importance": "critical",
+      "owner_id": "M02",
+      "source_refs": [
+        {"file": "data/demo/project_report.md", "page": 2, "section": "4. Evaluation metric", "quote": "We report F1 instead of accuracy as our headline metric because of the class imbalance."}
+      ],
+      "review_status": "verified"
+    },
+    {
+      "id": "D04",
+      "project_id": "P01",
+      "title": "Use a stratified train/val/test split",
+      "rationale": "Stratification keeps the same share of positive images in every subset; a random split could leave the small test set with very few positives and make F1 unstable.",
+      "alternatives": ["Random (non-stratified) split"],
+      "concept_ids": ["stratification", "class_imbalance", "evaluation_variance"],
+      "importance": "critical",
+      "owner_id": "M03",
+      "source_refs": [
+        {"file": "data/demo/project_report.md", "page": 3, "section": "5. Data split", "quote": "We used a stratified train/validation/test split (70/15/15) so that each subset keeps the same share of positive images as the full dataset."}
+      ],
+      "review_status": "verified"
+    },
+    {
+      "id": "D05",
+      "project_id": "P01",
+      "title": "Report a limitation: model not tested on images from other hospitals",
+      "rationale": "All images come from one hospital and one scanner type, so the team cannot claim the model generalises to other scanners or patient populations without external validation.",
+      "alternatives": ["Claim general performance without external validation"],
+      "concept_ids": ["generalisation", "external_validation", "dataset_shift"],
+      "importance": "critical",
+      "owner_id": "M04",
+      "source_refs": [
+        {"file": "data/demo/project_report.md", "page": 4, "section": "7. Limitations", "quote": "The model was not tested on images from other hospitals, so we cannot claim it generalises to different scanners or patient populations."}
+      ],
+      "review_status": "verified"
+    }
+  ]
+}
