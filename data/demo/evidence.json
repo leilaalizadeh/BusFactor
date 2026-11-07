@@ -1,0 +1,269 @@
+{
+  "_note": "SYNTHETIC DEMO DATA — invented answers, scored by the demo keyword rubric; matches the brief's starting-evidence table",
+  "evidence": [
+    {
+      "id": "E-D01-M01-seed",
+      "member_id": "M01",
+      "decision_id": "D01",
+      "question_id": "Q-D01-M01-why",
+      "answer": "Duplicates could end up in both the training and the test set, which is data leakage and inflates our scores. We imputed missing labels from the radiologist notes so we did not throw away usable images.",
+      "rubric_score": 2,
+      "status": "demonstrated",
+      "feedback": "Score 2/2: you explained Duplicates can leak between the training and test sets; Leakage inflates the scores (over-optimistic results); Imputing labels from radiologist notes keeps usable images.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 1,
+          "section": "2. Data preparation",
+          "quote": "We removed duplicate images and imputed missing labels before training, because duplicates could leak between the training and test sets and inflate our scores."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:00:00"
+    },
+    {
+      "id": "E-D01-M03-seed",
+      "member_id": "M03",
+      "decision_id": "D01",
+      "question_id": "Q-D01-M03-why",
+      "answer": "If the same image is in train and test, the model has already seen the test case, so the score is too optimistic. Removing duplicates stops that leakage, and imputing labels kept more images.",
+      "rubric_score": 2,
+      "status": "demonstrated",
+      "feedback": "Score 2/2: you explained Duplicates can leak between the training and test sets; Leakage inflates the scores (over-optimistic results); Imputing labels from radiologist notes keeps usable images.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 1,
+          "section": "2. Data preparation",
+          "quote": "We removed duplicate images and imputed missing labels before training, because duplicates could leak between the training and test sets and inflate our scores."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:01:00"
+    },
+    {
+      "id": "E-D01-M02-seed",
+      "member_id": "M02",
+      "decision_id": "D01",
+      "question_id": "Q-D01-M02-why",
+      "answer": "We cleaned the data so it would be of better quality before training, and imputed the labels that were missing.",
+      "rubric_score": 1,
+      "status": "needs_practice",
+      "feedback": "Score 1/2: You covered: Imputing labels from radiologist notes keeps usable images. Still missing: Duplicates can leak between the training and test sets.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 1,
+          "section": "2. Data preparation",
+          "quote": "We removed duplicate images and imputed missing labels before training, because duplicates could leak between the training and test sets and inflate our scores."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:02:00"
+    },
+    {
+      "id": "E-D02-M02-seed",
+      "member_id": "M02",
+      "decision_id": "D02",
+      "question_id": "Q-D02-M02-why",
+      "answer": "Random Forest captures non-linear interactions between the pretrained features without manual feature engineering. Logistic Regression is faster and easier to interpret, but it scored clearly lower on validation.",
+      "rubric_score": 2,
+      "status": "demonstrated",
+      "feedback": "Score 2/2: you explained Random Forest captures non-linear interactions between features; No manual feature engineering needed; Tradeoff: Logistic Regression is faster/more interpretable but scored lower.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 2,
+          "section": "3. Model selection",
+          "quote": "We chose Random Forest instead of Logistic Regression as our baseline because it captured non-linear interactions between features without manual feature engineering."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:03:00"
+    },
+    {
+      "id": "E-D02-M01-seed",
+      "member_id": "M01",
+      "decision_id": "D02",
+      "question_id": "Q-D02-M01-why",
+      "answer": "Random Forest is usually more accurate because it can model non-linear patterns.",
+      "rubric_score": 1,
+      "status": "needs_practice",
+      "feedback": "Score 1/2: You covered: Random Forest captures non-linear interactions between features. Still missing: No manual feature engineering needed.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 2,
+          "section": "3. Model selection",
+          "quote": "We chose Random Forest instead of Logistic Regression as our baseline because it captured non-linear interactions between features without manual feature engineering."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:04:00"
+    },
+    {
+      "id": "E-D02-M04-seed",
+      "member_id": "M04",
+      "decision_id": "D02",
+      "question_id": "Q-D02-M04-why",
+      "answer": "I think the professor suggested it in the lab session.",
+      "rubric_score": 0,
+      "status": "needs_practice",
+      "feedback": "Score 0/2: the answer does not yet explain the decision. Practice hint: Think about what kind of relationships each model can represent. Re-read data/demo/project_report.md page 2, then answer in your own words.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 2,
+          "section": "3. Model selection",
+          "quote": "We chose Random Forest instead of Logistic Regression as our baseline because it captured non-linear interactions between features without manual feature engineering."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:05:00"
+    },
+    {
+      "id": "E-D03-M02-seed",
+      "member_id": "M02",
+      "decision_id": "D03",
+      "question_id": "Q-D03-M02-why",
+      "answer": "Only about 12% of images show a finding, so the classes are imbalanced. A model that always predicts no finding gets 88% accuracy, which is misleading. F1 uses precision and recall on the positive class, so it only rises when we actually detect findings.",
+      "rubric_score": 2,
+      "status": "demonstrated",
+      "feedback": "Score 2/2: you explained Class imbalance: only about 12% of images show a finding; Accuracy is misleading: always predicting 'no finding' gives about 88%; F1 is built on precision and recall of the positive class.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 2,
+          "section": "4. Evaluation metric",
+          "quote": "We report F1 instead of accuracy as our headline metric because of the class imbalance."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:06:00"
+    },
+    {
+      "id": "E-D03-M04-seed",
+      "member_id": "M04",
+      "decision_id": "D03",
+      "question_id": "Q-D03-M04-why",
+      "answer": "Accuracy is not good when the classes are imbalanced, so we used F1 instead.",
+      "rubric_score": 1,
+      "status": "needs_practice",
+      "feedback": "Score 1/2: You covered: Class imbalance: only about 12% of images show a finding. Still missing: Accuracy is misleading: always predicting 'no finding' gives about 88%.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 2,
+          "section": "4. Evaluation metric",
+          "quote": "We report F1 instead of accuracy as our headline metric because of the class imbalance."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:07:00"
+    },
+    {
+      "id": "E-D04-M03-seed",
+      "member_id": "M03",
+      "decision_id": "D04",
+      "question_id": "Q-D04-M03-why",
+      "answer": "Stratification keeps the same share of positive images in train, validation and test. With a random split the small test set could by chance get very few positives, and then F1 would be unstable.",
+      "rubric_score": 2,
+      "status": "demonstrated",
+      "feedback": "Score 2/2: you explained Stratification keeps the same share of positives in every subset; A random split could leave a small test set with very few positives; Otherwise the F1 estimate is unstable/unreliable.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 3,
+          "section": "5. Data split",
+          "quote": "We used a stratified train/validation/test split (70/15/15) so that each subset keeps the same share of positive images as the full dataset."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:08:00"
+    },
+    {
+      "id": "E-D04-M01-seed",
+      "member_id": "M01",
+      "decision_id": "D04",
+      "question_id": "Q-D04-M01-why",
+      "answer": "Stratified splitting is good practice for classification problems.",
+      "rubric_score": 1,
+      "status": "needs_practice",
+      "feedback": "Score 1/2: You covered: Stratification keeps the same share of positives in every subset. Still missing: A random split could leave a small test set with very few positives.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 3,
+          "section": "5. Data split",
+          "quote": "We used a stratified train/validation/test split (70/15/15) so that each subset keeps the same share of positive images as the full dataset."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:09:00"
+    },
+    {
+      "id": "E-D05-M04-seed",
+      "member_id": "M04",
+      "decision_id": "D05",
+      "question_id": "Q-D05-M04-why",
+      "answer": "All our images came from one hospital, so that is a limitation.",
+      "rubric_score": 1,
+      "status": "needs_practice",
+      "feedback": "Score 1/2: You covered: All images come from one hospital and one scanner type. Still missing: So the team cannot claim the model generalises to other scanners/populations.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 4,
+          "section": "7. Limitations",
+          "quote": "The model was not tested on images from other hospitals, so we cannot claim it generalises to different scanners or patient populations."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:10:00"
+    },
+    {
+      "id": "E-D05-M02-seed",
+      "member_id": "M02",
+      "decision_id": "D05",
+      "question_id": "Q-D05-M02-why",
+      "answer": "Because the report needed a limitations section.",
+      "rubric_score": 0,
+      "status": "needs_practice",
+      "feedback": "Score 0/2: the answer does not yet explain the decision. Practice hint: Think about where all the training images came from. Re-read data/demo/project_report.md page 4, then answer in your own words.",
+      "source_refs": [
+        {
+          "file": "data/demo/project_report.md",
+          "page": 4,
+          "section": "7. Limitations",
+          "quote": "The model was not tested on images from other hospitals, so we cannot claim it generalises to different scanners or patient populations."
+        }
+      ],
+      "assessment_version": "v1",
+      "visibility": "private",
+      "is_synthetic": true,
+      "created_at": "2026-11-01T10:11:00"
+    }
+  ]
+}
