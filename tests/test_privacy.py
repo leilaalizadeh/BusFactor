@@ -204,8 +204,8 @@ def app():
     def open_as(viewer: str, page: str) -> AppTest:
         at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
         at.run()
-        at.sidebar.selectbox(key="viewer").set_value(viewer)
-        at.sidebar.radio[0].set_value(page)
+        at.selectbox(key="viewer").set_value(viewer)
+        at.radio(key="nav").set_value(page)
         at.run()
         assert not at.exception, at.exception
         return at
@@ -214,8 +214,8 @@ def app():
 
 def test_evidence_page_shows_no_other_member(app):
     full_journey()
-    at = app("M01", "6. Evidence & Limits")
-    tables = " ".join(df.value.to_csv() for df in at.dataframe)
+    at = app("M01", "Trust Center")
+    tables = " ".join(md.value for md in at.markdown if "bf-table" in md.value)  # HTML tables
     assert "submit_retest" not in tables and "start_check" not in tables
     assert not [m for m in ["M02", "M03", "M04"] if m in tables]
 
@@ -226,8 +226,9 @@ def test_missions_page_hides_a_failed_retest_from_others(app):
     orc.accept_mission(m.id, "M04")
     orc.start_retest(m.id, "M04")
     orc.submit_retest(m.id, "I am not sure.", "M04")
-    page = "4. Teach Each Other"
+    page = "Peer Missions"
     outsider = " ".join(md.value for md in app("M01", page).markdown)
-    assert "Retest not passed yet" not in outsider and "Accepted" in outsider
+    assert "Retest not passed yet" not in outsider
+    assert "Mission accepted" in outsider  # an outsider sees the mission as simply in progress
     learner = " ".join(md.value for md in app("M04", page).markdown)
     assert "Retest not passed yet" in learner

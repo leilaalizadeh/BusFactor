@@ -41,6 +41,9 @@ python -m streamlit run app.py
 Run the tests with `python -m pytest -q`. They run offline: the model is replaced by a deterministic fake.
 `tests/test_live_llm.py` is skipped unless you set `RUN_LIVE_LLM=1` and `LLM_API_KEY`; it sends only the
 synthetic test report.
+`tests/test_browser.py` checks the Knowledge Constellation in a real browser (click and keyboard selection,
+focus, reduced motion, no horizontal scrolling at phone width). It is skipped unless you set
+`RUN_BROWSER_TESTS=1` and Google Chrome is installed (`CHROME_PATH` overrides its location).
 
 With `DEMO_MODE=true` (the default in `.env.example`) the app runs offline and does not call any AI model.
 To use a real model, set `DEMO_MODE=false` and put an Anthropic API key in `LLM_API_KEY`.
@@ -65,14 +68,44 @@ to share and members who agreed to take part.
 In the demo, coverage starts at 1/5. Member B teaches Member D why the team used F1 instead of accuracy (D03),
 Member D passes the new question, and coverage goes to 2/5.
 
+## The experience: the Knowledge Resilience Lab
+
+Seven screens, each answering one question:
+
+| Screen | Question it answers |
+|---|---|
+| **Mission Control** | How resilient is our knowledge, what is vulnerable, and what should *I* do next? Verified coverage and assessment completeness are shown separately; the Resilience Pulse charts every stored coverage change. |
+| **Knowledge Atlas** | Who can defend each decision? An interactive constellation: click a star (or Tab to it and press Enter) to open its spotlight with reasoning, source and the next permitted action. Filters, search, and the same content as an accessible list. |
+| **Defense Studio** | One calm workspace for practice questions, owner checks and independent retests, with a personal queue. Practice may show the source; independent questions never do. |
+| **Peer Missions** | Every mission as a journey: proposed → both agreed → teach-back and retest → verified. People are shown only once both agree; a failed retest is visible only to the two people in it. |
+| **Decision Library** | Each decision with its reasoning, rejected alternatives and the exact quote; review and confirm with an owner. |
+| **Project Setup** | A six-step guided start (project, team, material, decisions, confirm, begin), each step checked against stored data. |
+| **Trust Center** | The evidence table, your own view of the action log, abstentions, and the limits of the prototype. |
+
+**Your next move** (on Mission Control) recommends the single most useful permitted step for the selected
+member, and its button opens the right screen with the right item focused.
+
+**Visual identity: the Intelligence Observatory.** Dark by default (deep ink and graphite), with an
+equally designed light mode under **Display & demo** in the top bar. The hero and the knowledge map are
+always-dark "instrument" surfaces. Type is IBM Plex Sans (light weights for headlines and numbers) and
+IBM Plex Mono only for ids and small labels, loaded from the fonts installed on the machine with system
+fallbacks (Segoe UI Variable / SF Pro); nothing is downloaded. Colour always has a meaning (teal =
+verified, amber = one person, red = nobody, violet = mission, blue = completeness and selection) and every
+status also has a text label and a glyph. Tokens live in `src/busfactor/ui/theme.py`; all text colours are
+checked for WCAG AA contrast in tests, animations stop under `prefers-reduced-motion`, page layouts stack
+below 1100 px, and the constellation becomes a vertical list on narrow screens.
+
+Deep links for demos: `?page=1&as=M04&focus=D03` opens the Atlas as Member D with D03 in the spotlight
+(`page` is the screen number from 0, or its name); add `&theme=light` for light mode.
+
 ## Using it for your own project
 
 1. **Project Setup → Start a new project**: title, course, the report (PDF, Markdown or text) and the team's
-   names. The project is added next to the demo; nothing is deleted. Switch projects in the sidebar.
+   names. The project is added next to the demo; nothing is deleted. Switch projects in the top bar.
 2. **Add decisions**: by hand (paste the exact quote and its page; it is checked against the document), or let
    the live model propose up to 5. Every card starts as *proposed*. A member checks the quote, declares the owner
    and confirms it. Only confirmed cards are ever assessed.
-3. **Private Check → My consent**: each member opts in for themselves (assessment, mentoring, learning). Every
+3. **Defense Studio → My consent**: each member opts in for themselves (assessment, mentoring, learning). Every
    consent starts off. Withdrawing removes that member's answers from the team's coverage.
 4. **Owner check**: the person who made a decision answers one independent question on it. Owning a decision is
    not proof of understanding it; only a full answer lets them mentor it.
@@ -95,7 +128,12 @@ automatically**: they wait for human review, so coverage does not move.
 | `models.py` | T4 | Shared data models (section 5 of the team brief). |
 | `database.py` | T4 | SQLite storage, private answers, action log, loading the demo data. |
 | `orchestrator.py` | T4 | Runs the steps in order and logs each one (max 6 steps per action). |
-| `app.py` | T4 | Streamlit app with 6 pages. |
+| `app.py` | T4 | The app shell: theme, top bar (project, demo identity, navigation, display settings), routing, status bar. |
+| `ui/theme.py` | T4 | Design tokens (dark and light) and the one stylesheet. |
+| `ui/model.py` | T4 | View models: turns orchestrator state into what one viewer may see (counts only for the team). |
+| `ui/parts.py` | T4 | Small HTML building blocks: status chips (glyph + text), tiles, stage track, quotes, Pulse. |
+| `ui/atlas.py` | T4 | The Knowledge Constellation, a two-way Streamlit component (SVG + keyboard-accessible JS). |
+| `ui/pages.py` | T4 | The seven screens. |
 
 Built with Python 3.11, Streamlit, Pydantic 2, SQLite, pdfplumber, the Anthropic SDK and pytest.
 

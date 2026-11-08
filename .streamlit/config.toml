@@ -1,7 +1,16 @@
+# BusFactor — Intelligence Observatory. Colours mirror src/busfactor/ui/theme.py (TOKENS["dark"]).
+# Dark is the default for everyone. Light mode is the in-app "Display & demo" switch, which re-themes the
+# whole app through the design tokens (Streamlit ignores `base` once separate light/dark palettes exist).
 [theme]
 base = "dark"
-primaryColor = "#5B76FF"
-backgroundColor = "#0A0F1F"
-secondaryBackgroundColor = "#161F3D"
-textColor = "#E8EBF7"
-font = "sans serif"
+primaryColor = "#2DD4BF"
+backgroundColor = "#07090C"
+secondaryBackgroundColor = "#141B23"
+textColor = "#EEF2F5"
+borderColor = "#2E3A46"
+linkColor = "#7DD3FC"
+font = '"IBM Plex Sans", "Segoe UI Variable Text", "SF Pro Text", system-ui, -apple-system, "Segoe UI", sans-serif'
+headingFont = '"IBM Plex Sans", "Segoe UI Variable Display", "SF Pro Display", system-ui, sans-serif'
+codeFont = '"IBM Plex Mono", "Cascadia Mono", "SF Mono", ui-monospace, Consolas, monospace'
+baseRadius = "0.6rem"
+showWidgetBorder = true

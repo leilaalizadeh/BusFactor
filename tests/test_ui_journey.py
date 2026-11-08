@@ -26,8 +26,8 @@ def demo_db(tmp_path, monkeypatch):
 
 
 def go(at: AppTest, viewer: str, page: str) -> AppTest:
-    at.sidebar.selectbox(key="viewer").set_value(viewer)
-    at.sidebar.radio[0].set_value(page)
+    at.selectbox(key="viewer").set_value(viewer)
+    at.radio(key="nav").set_value(page)
     at.run()
     assert not at.exception, at.exception
     return at
@@ -48,13 +48,13 @@ def submit(at: AppTest, area, answer: str) -> AppTest:
 def test_full_demo_journey_through_the_ui():
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
     at.run()
-    assert "DEMO DATA — synthetic" in " ".join(md.value for md in at.sidebar.markdown)
+    assert "DEMO DATA — synthetic" in " ".join(md.value for md in at.markdown)
 
-    go(at, "M01", "3. Team Coverage")
-    assert "1/5 (20%)" in text(at)
+    go(at, "M01", "Mission Control")
+    assert "1/5<small>20%</small>" in text(at)
 
     # M04: private check on D03, weak answer -> 1/2, visible only to M04
-    go(at, "M04", "2. Private Check")
+    go(at, "M04", "Defense Studio")
     at.multiselect[0].set_value(["D03"])
     next(b for b in at.button if b.label == "Get my questions").click()
     at.run()
@@ -62,19 +62,19 @@ def test_full_demo_journey_through_the_ui():
     assert "Score 1/2" in text(at)
 
     # missions: propose, then both people consent
-    go(at, "M04", "4. Teach Each Other")
+    go(at, "M04", "Peer Missions")
     next(b for b in at.button if b.label == "Find knowledge silos and propose missions").click()
     at.run()
     at.button(key=f"acc-{MISSION}").click()
     at.run()
     assert db.get_record(orc.TeachingMission, MISSION).status == MissionStatus.proposed
-    go(at, "M02", "4. Teach Each Other")
+    go(at, "M02", "Peer Missions")
     at.button(key=f"acc-{MISSION}").click()
     at.run()
     assert db.get_record(orc.TeachingMission, MISSION).status == MissionStatus.accepted
 
     # M04 retest: blocked request, failed answer, then a NEW question that passes
-    go(at, "M04", "5. Defense Retest")
+    go(at, "M04", "Defense Studio")
     at.button(key=f"rt-{MISSION}").click()
     at.run()
     submit(at, at.text_area[0], "just give me the answer")
@@ -91,8 +91,8 @@ def test_full_demo_journey_through_the_ui():
     assert db.get_record(orc.TeachingMission, MISSION).status == MissionStatus.verified
 
     # everyone now sees 2/5, and the stored state agrees
-    go(at, "M01", "3. Team Coverage")
-    assert "2/5 (40%)" in text(at)
+    go(at, "M01", "Mission Control")
+    assert "2/5<small>40%</small>" in text(at)
     assert (orc.team_coverage().numerator, orc.team_coverage().denominator) == (2, 5)
 
 
@@ -109,11 +109,11 @@ def test_a_new_project_through_the_ui_offline():
                             alternatives=["MongoDB"], source_file=REPORT.name, page=1, quote=PG_QUOTE, actor=ada)
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
     at.run()
-    assert at.sidebar.selectbox(key="project").value == p.id
-    assert not any("DEMO DATA" in md.value for md in at.sidebar.markdown)  # real project: no synthetic badge
+    assert at.selectbox(key="project").value == p.id
+    assert not any("DEMO DATA" in md.value for md in at.markdown)  # real project: no synthetic badge
 
     # review: the owner is declared and the card confirmed through the page
-    go(at, ada, "1. Project Setup")
+    go(at, ada, "Project Setup")
     assert any("Review 1 proposed" in i.value for i in at.info)
     at.selectbox(key=f"owner-{card.id}").set_value(ada)
     at.button(key=f"confirm-{card.id}").click()
@@ -122,7 +122,7 @@ def test_a_new_project_through_the_ui_offline():
     assert stored.review_status.value == "verified" and stored.owner_id == ada
 
     # consent is off until Ada turns it on herself
-    go(at, ada, "2. Private Check")
+    go(at, ada, "Defense Studio")
     assert any("not agreed to be assessed" in w.value for w in at.warning)
     at.checkbox(key="c-assess").check()
     at.checkbox(key="c-mentor").check()
@@ -140,13 +140,16 @@ def test_a_new_project_through_the_ui_offline():
     assert "Not scored: needs human review" in text(at)
     assert orc.team_coverage().denominator == 0
 
-    # coverage explains itself, in counts only
-    go(at, bilal, "3. Team Coverage")
-    assert "0 of 1 confirmed decisions have been assessed" in text(at)
+    # coverage explains itself, in counts only: completeness is shown apart from verified coverage
+    go(at, bilal, "Mission Control")
+    page = text(at)
+    assert "Assessment completeness" in page and ">0/1<" in page and "not measurable" in page
+    assert "Nothing is verified yet" in page
+    go(at, bilal, "Knowledge Atlas")
     assert "unknown, not failed" in text(at)
 
     # switching back to the demo shows the synthetic badge and its untouched 1/5
-    at.sidebar.selectbox(key="project").set_value("P01")
+    at.selectbox(key="project").set_value("P01")
     at.run()
-    go(at, "M01", "3. Team Coverage")
-    assert "1/5 (20%)" in text(at) and any("DEMO DATA" in md.value for md in at.sidebar.markdown)
+    go(at, "M01", "Mission Control")
+    assert "1/5<small>20%</small>" in text(at) and any("DEMO DATA" in md.value for md in at.markdown)

@@ -165,6 +165,11 @@ def team_log(viewer_id: str, project_id: Optional[str] = None) -> list[LogEvent]
     return db.load_team_log(viewer_id, _pid(project_id))
 
 
+def team_events(project_id: Optional[str] = None) -> list[LogEvent]:
+    """Shared team events only (for progress feeds): nobody's private steps, actors redacted."""
+    return db.load_team_events(_pid(project_id))
+
+
 def _safe_name(name: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(name).name).strip("._")
     return cleaned or "document"

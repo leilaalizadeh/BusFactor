@@ -305,8 +305,8 @@ def open_as(viewer: str, page: str):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
     at.run()
-    at.sidebar.selectbox(key="viewer").set_value(viewer)
-    at.sidebar.radio[0].set_value(page)
+    at.selectbox(key="viewer").set_value(viewer)
+    at.radio(key="nav").set_value(page)
     at.run()
     assert not at.exception, at.exception
     return at
@@ -314,11 +314,11 @@ def open_as(viewer: str, page: str):
 
 def test_offline_setup_never_pretends_to_extract(tmp_path):
     # the demo project offers no extraction at all
-    at = open_as("M01", "1. Project Setup")
+    at = open_as("M01", "Project Setup")
     assert not any(b.label == "Propose decisions with the live model" for b in at.button)
     # an offline live project: the model button is disabled and the page says why
     p = orc.create_project("Campus Events App", "Databases", [("report.md", b"We chose PostgreSQL.")], ["Ada"])
-    at = open_as(f"{p.id}-M01", "1. Project Setup")
+    at = open_as(f"{p.id}-M01", "Project Setup")
     extract = next(b for b in at.button if b.label == "Propose decisions with the live model")
     assert extract.disabled and any(orc.EXTRACTION_NEEDS_MODEL in c.value for c in at.caption)
     assert any("Next step" in i.value for i in at.info)
@@ -328,13 +328,13 @@ def test_retest_page_asks_for_a_new_question_after_an_answer():
     m = accepted_d03()
     orc.start_retest(m.id, "M04")
     orc.submit_retest(m.id, "I am not sure.", "M04")
-    at = open_as("M04", "5. Defense Retest")
+    at = open_as("M04", "Defense Studio")
     assert len(at.text_area) == 0
     assert any(b.label == "Start a new independent question" for b in at.button)
 
 
 def test_private_check_offers_the_owner_check(fresh):
-    at = open_as("M02", "2. Private Check")
+    at = open_as("M02", "Defense Studio")
     assert any("Verify a decision you own" in md.value for md in at.markdown)
     at.button(key="own-start").click().run()
     assert not at.exception
@@ -343,6 +343,6 @@ def test_private_check_offers_the_owner_check(fresh):
 
 def test_private_check_respects_missing_consent():
     without_consent("M04")
-    at = open_as("M04", "2. Private Check")
+    at = open_as("M04", "Defense Studio")
     assert any("not agreed to be assessed" in w.value for w in at.warning)
     assert not any(b.label == "Get my questions" for b in at.button)

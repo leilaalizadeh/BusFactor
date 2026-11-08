@@ -220,6 +220,15 @@ def load_log(limit: Optional[int] = 500, project_id: Optional[str] = None) -> li
     return [LogEvent.model_validate_json(r[0]) for r in rows][::-1]
 
 
+def load_team_events(project_id: str, limit: int = 200) -> list[LogEvent]:
+    """Only the TEAM-audience events of one project (no private steps of anyone), actors redacted."""
+    with _connect() as con:
+        rows = con.execute("SELECT data FROM log_events WHERE audience = ? AND project_id = ? "
+                           "ORDER BY seq DESC LIMIT ?", (TEAM, project_id, limit)).fetchall()
+    events = [LogEvent.model_validate_json(r[0]) for r in rows][::-1]
+    return [e if e.actor == "agent" else e.model_copy(update={"actor": REDACTED_ACTOR}) for e in events]
+
+
 def load_team_log(viewer_id: str, project_id: Optional[str] = None, limit: int = 500) -> list[LogEvent]:
     """What `viewer_id` may see in one project: TEAM events plus their own private events.
 

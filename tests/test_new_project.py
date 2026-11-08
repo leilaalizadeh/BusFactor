@@ -326,10 +326,10 @@ def test_pages_never_claim_a_login(offline):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60)
     at.run()
-    at.sidebar.radio[0].set_value("2. Private Check")
+    at.radio(key="nav").set_value("Defense Studio")
     at.run()
-    shown = " ".join([*(md.value for md in at.markdown), *(md.value for md in at.sidebar.markdown),
-                      at.sidebar.selectbox(key="viewer").label])
+    shown = " ".join([*(md.value for md in at.markdown), *(md.value for md in at.markdown),
+                      at.selectbox(key="viewer").label])
     assert "not a login" in shown and "no login yet" in shown
     assert "Only you can see" not in shown and "Only you can change" not in shown
 
