@@ -4,6 +4,11 @@ Each model is stored as JSON in a `data` column, with id + key columns for looku
 Privacy is enforced HERE: evidence (answers and scores) can only be read by its owner
 via get_private_evidence(); load_all() refuses evidence. The agent's coverage
 computation uses evidence_for_coverage(), whose result must never be shown in the UI.
+
+The action log has an audience per event: TEAM (shared project facts and aggregate
+coverage), a list of member ids (private steps, visible only to them) or INTERNAL
+(nobody). The UI reads it only through load_team_log(viewer_id); load_log() is the
+full audit trail for the agent and tests and must never be displayed.
 """
 from __future__ import annotations
 
@@ -12,7 +17,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Type, TypeVar
+from typing import Iterable, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel
 
@@ -29,6 +34,11 @@ TABLES: dict[type, str] = {
 M = TypeVar("M", bound=BaseModel)
 _db_path: Path = Path(os.getenv("BUSFACTOR_DB", REPO_ROOT / "busfactor.db"))
 
+TEAM = "team"            # every member may see the event
+INTERNAL = "internal"    # nobody sees it in the UI (default: fail closed)
+REDACTED_ACTOR = "team member"
+Audience = Union[str, Iterable[str]]   # TEAM, INTERNAL, or the member ids allowed to see it
+
 
 def set_db_path(path: str | Path) -> None:
     global _db_path
@@ -42,12 +52,23 @@ def _connect():
         for table in TABLES.values():
             con.execute(f"CREATE TABLE IF NOT EXISTS {table} "
                         "(id TEXT PRIMARY KEY, member_id TEXT, decision_id TEXT, data TEXT NOT NULL)")
-        con.execute("CREATE TABLE IF NOT EXISTS log_events "
-                    "(seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)")
+        con.execute("CREATE TABLE IF NOT EXISTS log_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    f"data TEXT NOT NULL, audience TEXT NOT NULL DEFAULT '{INTERNAL}')")
+        if "audience" not in {row[1] for row in con.execute("PRAGMA table_info(log_events)")}:
+            # older databases: existing rows become INTERNAL, so nothing old leaks into the team view
+            con.execute(f"ALTER TABLE log_events ADD COLUMN audience TEXT NOT NULL DEFAULT '{INTERNAL}'")
         yield con
         con.commit()
     finally:
         con.close()
+
+
+def _upsert(con: sqlite3.Connection, record: BaseModel) -> str:
+    table = TABLES[type(record)]
+    member = getattr(record, "member_id", None) or getattr(record, "learner_id", None)
+    con.execute(f"INSERT OR REPLACE INTO {table} (id, member_id, decision_id, data) VALUES (?, ?, ?, ?)",
+                (record.id, member, getattr(record, "decision_id", None), record.model_dump_json()))
+    return record.id
 
 
 def save_record(record: BaseModel) -> str:
@@ -56,12 +77,20 @@ def save_record(record: BaseModel) -> str:
         with _connect() as con:
             cur = con.execute("INSERT INTO log_events (data) VALUES (?)", (record.model_dump_json(),))
             return str(cur.lastrowid)
-    table = TABLES[type(record)]
-    member = getattr(record, "member_id", None) or getattr(record, "learner_id", None)
     with _connect() as con:
-        con.execute(f"INSERT OR REPLACE INTO {table} (id, member_id, decision_id, data) VALUES (?, ?, ?, ?)",
-                    (record.id, member, getattr(record, "decision_id", None), record.model_dump_json()))
-    return record.id
+        return _upsert(con, record)
+
+
+def save_records(*records: BaseModel, replacing: tuple[type, ...] = ()) -> list[str]:
+    """Upsert several records in ONE transaction: all are written, or none (e.g. evidence + mission).
+
+    `replacing` first deletes every record of those types inside the same transaction, so a new
+    project either fully replaces the old one or leaves it untouched.
+    """
+    with _connect() as con:  # commits on success; closing without commit rolls back on error
+        for model_cls in replacing:
+            con.execute(f"DELETE FROM {TABLES[model_cls]}")
+        return [_upsert(con, r) for r in records]
 
 
 def _rows(model_cls: Type[M], where: str = "", args: tuple = ()) -> list[M]:
@@ -96,16 +125,42 @@ def evidence_for_coverage() -> list[AssessmentEvidence]:
     return _rows(AssessmentEvidence)
 
 
-def log(actor: str, action: str, detail: Optional[dict] = None) -> LogEvent:
+def _audience(audience: Audience) -> str:
+    if audience in (TEAM, INTERNAL):
+        return audience
+    ids = sorted({audience} if isinstance(audience, str) else {a for a in audience if a})
+    return json.dumps(ids) if ids else INTERNAL
+
+
+def log(actor: str, action: str, detail: Optional[dict] = None, audience: Audience = INTERNAL) -> LogEvent:
+    """Append an event. `audience` decides who may see it in the UI (see module docstring)."""
     event = LogEvent(actor=actor, action=action, detail=detail or {})
-    save_record(event)
+    with _connect() as con:
+        con.execute("INSERT INTO log_events (data, audience) VALUES (?, ?)",
+                    (event.model_dump_json(), _audience(audience)))
     return event
 
 
-def load_log(limit: int = 500) -> list[LogEvent]:
+def load_log(limit: Optional[int] = 500) -> list[LogEvent]:
+    """The audit trail (newest `limit` events, or all with None), for the agent and tests ONLY. Never display."""
     with _connect() as con:
-        rows = con.execute("SELECT data FROM log_events ORDER BY seq DESC LIMIT ?", (limit,)).fetchall()
+        rows = con.execute("SELECT data FROM log_events ORDER BY seq DESC LIMIT ?",
+                           (-1 if limit is None else limit,)).fetchall()
     return [LogEvent.model_validate_json(r[0]) for r in rows][::-1]
+
+
+def load_team_log(viewer_id: str, limit: int = 500) -> list[LogEvent]:
+    """What `viewer_id` may see: TEAM events plus their own private events.
+
+    Other members are never named: any actor that is not the agent or the viewer
+    is shown as "team member".
+    """
+    with _connect() as con:
+        rows = con.execute("SELECT data FROM log_events WHERE audience = ? OR instr(audience, ?) > 0 "
+                           "ORDER BY seq DESC LIMIT ?", (TEAM, json.dumps(viewer_id), limit)).fetchall()
+    events = [LogEvent.model_validate_json(r[0]) for r in rows][::-1]
+    return [e if e.actor in ("agent", viewer_id) else e.model_copy(update={"actor": REDACTED_ACTOR})
+            for e in events]
 
 
 def reset() -> None:
@@ -124,4 +179,5 @@ def seed_demo() -> None:
         raw = json.loads((DEMO_DIR / file).read_text(encoding="utf-8"))[key]
         for item in raw if isinstance(raw, list) else [raw]:
             save_record(model_cls.model_validate(item))
-    log("agent", "seed_demo", {"note": "SYNTHETIC DEMO DATA loaded", "files": [s[0] for s in sources]})
+    log("agent", "seed_demo", {"note": "SYNTHETIC DEMO DATA loaded", "files": [s[0] for s in sources]},
+        audience=TEAM)

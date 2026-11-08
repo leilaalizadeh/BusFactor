@@ -524,7 +524,7 @@ with st.sidebar:
     st.caption("Your grade is shared. Your understanding shouldn't be isolated.")
     badge = orc.demo_banner()
     if badge:
-        show(f'<div class="bf-badge"><b>{esc(badge)}</b>Fictional project, members and answers.</div>')
+        show(f'<div class="bf-badge"><b>{esc(badge)}</b>Fictional project, members, answers and consent.</div>')
     # Optional deep links for demos and screenshots, e.g. ?page=3&as=M04
     qp_page, qp_as = st.query_params.get("page", ""), st.query_params.get("as", "")
     start_page = int(qp_page) if qp_page.isdigit() and 0 <= int(qp_page) < len(PAGES) else 0
@@ -554,9 +554,13 @@ elif page == PAGES[1]:
         show(f'<div class="bf-muted">{esc(p.course)} · source: {esc(", ".join(p.source_files))}</div>')
 
     with st.expander("Upload a different project file"):
+        if orc.demo_mode():
+            st.info(orc.DEMO_UPLOAD_REFUSED)
         upload = st.file_uploader("PDF, Markdown or text. Only upload files you are allowed to share.",
-                                  type=["pdf", "md", "txt"])
-        if upload and st.button("Extract decision cards", type="primary"):
+                                  type=["pdf", "md", "txt"], disabled=orc.demo_mode())
+        replace_ok = st.checkbox("I understand this starts a new project and deletes the current decisions, "
+                                 "answers, missions and retests.", disabled=orc.demo_mode())
+        if upload and st.button("Extract decision cards", type="primary", disabled=not replace_ok):
             dest = ROOT / "uploads" / Path(upload.name).name
             dest.parent.mkdir(exist_ok=True)
             dest.write_bytes(upload.getvalue())
@@ -600,6 +604,22 @@ elif page == PAGES[2]:
                 "Questions about decisions you didn't make. Only you can see your answers and feedback.")
     st.info("Scores are practice feedback, not grades. You can answer in English or Italian; "
             "grammar and language never lower the score.", icon="🔒")
+    if not members[viewer].consent_assessment:
+        st.warning("You have not agreed to be assessed, so BusFactor will not ask or score you.")
+        st.stop()
+
+    owned = orc.owner_check_decisions(viewer)
+    if owned:
+        with st.container(border=True):
+            st.markdown("**Verify a decision you own**")
+            show('<div class="bf-muted">Owning a decision is not proof you can defend it. One independent '
+                 'question, no hints: only a full answer lets you mentor a teammate on it.</div>')
+            pick = st.selectbox("Decision", owned, format_func=lambda i: f"{i} · {cards[i].title}", key="own-pick")
+            if st.button("Start owner check", key="own-start"):
+                try:
+                    orc.start_owner_check(viewer, pick)
+                except ValueError as err:
+                    st.warning(str(err))
 
     with st.container(border=True):
         others = [d for d in cards.values() if d.owner_id != viewer]
@@ -610,7 +630,8 @@ elif page == PAGES[2]:
             made = orc.start_check(viewer, choice)
             st.success(f"{len(made)} new question(s) below." if made else "No new questions for these decisions.")
 
-    pairs = [(q, ev) for q, ev in orc.my_questions(viewer, viewer) if q.mode != "independent"]
+    pairs = [(q, ev) for q, ev in orc.my_questions(viewer, viewer)
+             if q.mode != "independent" or orc.is_owner_check(q)]
     open_qs = [(q, ev) for q, ev in pairs if ev is None]
     done_qs = [(q, ev) for q, ev in pairs if ev is not None]
 
@@ -619,7 +640,9 @@ elif page == PAGES[2]:
         show('<div class="bf-muted">Nothing open. Get new questions above.</div>')
     for q, _ in sorted(open_qs, key=lambda x: x[0].id):
         with st.container(border=True):
-            show(f'{pill(q.question_type.value.replace("_", " ").title(), "blue")} '
+            kind_label = ("Owner check · no hints" if orc.is_owner_check(q)
+                          else q.question_type.value.replace("_", " ").title())
+            show(f'{pill(kind_label, "blue")} '
                  f'<span class="bf-muted">{esc(q.decision_id)} · {esc(cards[q.decision_id].title)}</span>')
             show(f'<div class="bf-question">{esc(q.prompt)}</div>')
             with st.form(f"form-{q.id}"):
@@ -698,8 +721,10 @@ elif page == PAGES[4]:
     for m in all_missions:
         involved = viewer in (m.mentor_id, m.learner_id)
         public = m.status in (MissionStatus.accepted, MissionStatus.completed, MissionStatus.verified)
+        # a failed retest is the learner's private result: others just see the mission in progress
+        shown = MissionStatus.accepted if m.status == MissionStatus.completed and not involved else m.status
         with st.container(border=True):
-            label, kind = MISSION_PILL[m.status.value]
+            label, kind = MISSION_PILL[shown.value]
             left, right = st.columns([5, 1.8])
             left.markdown(f"**{m.decision_id} · {cards[m.decision_id].title}**")
             with right:
@@ -749,35 +774,40 @@ elif page == PAGES[5]:
                 show(win("Transfer verified", f"You explained {m.decision_id} on a new question, with no hints. "
                                               "Team coverage went up."))
                 continue
-            if st.button("Start a new independent question", key=f"rt-{m.id}"):
-                orc.start_retest(m.id, viewer)
-                st.rerun()
+            if not members[viewer].consent_assessment:
+                st.warning("You have not agreed to be assessed, so the retest is not available.")
+                continue
+            q, ev = next(((q, ev) for q, ev in orc.my_questions(viewer, viewer) if q.id == m.retest_question_id),
+                         (None, None))
+            if ev is not None:  # one answer per question: a retry needs a NEW question
+                show(f'<div class="bf-muted">Your answer to the last question was recorded: {esc(ev.feedback)}</div>')
+            if q is None or ev is not None:
+                if st.button("Start a new independent question", key=f"rt-{m.id}"):
+                    orc.start_retest(m.id, viewer)
+                    st.rerun()
+                continue
 
-            m = next(x for x in orc.missions() if x.id == m.id)
-            if m.retest_question_id:
-                q = next(q for q, _ in orc.my_questions(viewer, viewer) if q.id == m.retest_question_id)
-                show(f'<div class="bf-question">{esc(q.prompt)}</div>')
-                with st.form(f"retest-{m.id}"):
-                    answer = st.text_area("Your answer", height=130)
-                    if st.form_submit_button("Submit", type="primary"):
-                        res = orc.submit_retest(m.id, answer, viewer)
-                        if res.blocked:
-                            st.error(res.message)
+            show(f'<div class="bf-question">{esc(q.prompt)}</div>')
+            with st.form(f"retest-{m.id}"):
+                answer = st.text_area("Your answer", height=130)
+                if st.form_submit_button("Submit", type="primary"):
+                    res = orc.submit_retest(m.id, answer, viewer)
+                    if res.blocked:
+                        st.error(res.message)
+                    else:
+                        cov = coverage_text(res.coverage.numerator, res.coverage.denominator)
+                        if res.evidence.rubric_score == 2:
+                            show(win("Transfer verified", f"New question passed. Team coverage is now {cov}."))
                         else:
-                            cov = coverage_text(res.coverage.numerator, res.coverage.denominator)
-                            if res.evidence.rubric_score == 2:
-                                show(win("Transfer verified", f"New question passed. Team coverage is now {cov}."))
-                            else:
-                                label, kind = EVIDENCE_PILL[res.evidence.status.value]
-                                show(pill(label, kind))
-                            st.markdown(f"Result: {res.evidence.feedback}")
-                            st.markdown(f"Mission status: **{res.mission.status.value}** · team coverage now "
-                                        f"{coverage_text(res.coverage.numerator, res.coverage.denominator)}")
+                            label, kind = EVIDENCE_PILL[res.evidence.status.value]
+                            show(pill(label, kind))
+                        st.markdown(f"Result: {res.evidence.feedback}")
+                        st.markdown(f"Mission status: **{res.mission.status.value}** · team coverage now {cov}")
 
 # ------------------------------------------------------------------ 6. evidence & limits
 else:
     page_header(6, "Evidence & Limits", "Where every decision comes from, what the agent did, and what it can't do.")
-    log = orc.db.load_log()
+    log = orc.team_log(viewer)  # team events + the viewer's own private steps, never other members'
 
     def log_table(events):
         return pd.DataFrame([{"time": e.ts.strftime("%H:%M:%S"), "actor": e.actor, "action": e.action,
@@ -792,7 +822,8 @@ else:
             "Quote": " / ".join(r.quote for r in d.source_refs),
         } for d in cards.values()]), hide_index=True, width="stretch")
     with actions:
-        st.caption("Every step the agent takes. Answers and scores are never written here.")
+        st.caption("Shared project steps, plus your own private steps. Other members' checks, consents and "
+                   "retests are never shown here, and answers and scores are never written to the log.")
         st.dataframe(log_table(log[::-1]), hide_index=True, width="stretch")
     with abstain:
         flagged = [e for e in log if any(k in e.action for k in ("abstain", "blocked", "answer_request"))
