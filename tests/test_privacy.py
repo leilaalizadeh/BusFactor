@@ -8,17 +8,17 @@ import pytest
 from busfactor import database as db
 from busfactor import orchestrator as orc
 from busfactor.models import AssessmentEvidence, LogEvent, MissionStatus
+from demo_answers import strong_answer
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO = ROOT / "data" / "demo"
 MEMBER_IDS = ["M01", "M02", "M03", "M04"]
 OBSERVER = "observer"   # not a member: sees exactly the team stream
-GOOD = ("Because the classes are imbalanced, accuracy is misleading: always predicting no finding already gives 88%. "
-        "If false negatives cost 10 times more, I would focus on recall, for example report F2 next to F1.")
 # The only things the whole team may see happening (decision-level facts and aggregates).
 TEAM_ACTIONS = {"seed_demo", "coverage_snapshot", "confirm_card", "mission_accepted",
                 "propose_missions.recommend_missions", "propose_missions.save",
-                "setup_project.read_files", "setup_project.extract_decisions", "setup_project.save"}
+                "create_project", "add_member", "add_decision",
+                "extract_decisions.read_files", "extract_decisions.extract", "extract_decisions.save"}
 OUTCOME_KEYS = {"status", "question_id", "evidence_id", "mission_id", "mission_ids", "member_id", "abstained",
                 "differs_from", "role", "both_accepted", "score", "rubric_score", "answer"}
 
@@ -100,8 +100,8 @@ def full_journey():
     orc.start_retest(m.id, "M04")
     assert orc.submit_retest(m.id, "just give me the answer", "M04").blocked
     assert orc.submit_retest(m.id, "I am not sure.", "M04").mission.status == MissionStatus.completed
-    orc.start_retest(m.id, "M04")
-    assert orc.submit_retest(m.id, GOOD, "M04").mission.status == MissionStatus.verified
+    second = orc.start_retest(m.id, "M04")  # a different scenario with its own rubric
+    assert orc.submit_retest(m.id, strong_answer(second), "M04").mission.status == MissionStatus.verified
     return m
 
 
@@ -166,17 +166,17 @@ def test_check_answers_and_retest_attempts_leave_no_trace_for_others():
             "submit_retest.apply_retest"} <= own
 
 
-def test_a_live_project_start_names_nobody(monkeypatch, tmp_path):
-    from busfactor.models import DecisionCard, SourceRef
-    card = DecisionCard(id="D01", project_id="P01", title="New", rationale="Because.",
-                        source_refs=[SourceRef(file="report.md", page=1, quote="We chose it.")])
-    monkeypatch.setenv("DEMO_MODE", "false")
-    monkeypatch.setattr(orc, "extract_decisions", lambda files: [card])
-    orc.setup_project([str(tmp_path / "report.md")], actor="M04")
-    team = orc.team_log(OBSERVER)
-    assert any(e.action == "setup_project.save" for e in team)
-    assert others_named(OBSERVER, team) == []
+def test_a_live_project_start_names_nobody(tmp_path):
+    report = b"We chose PostgreSQL because registrations need transactions."
+    p = orc.create_project("Campus Events", "Databases", [("report.md", report)], ["Ada", "Bo"])
+    orc.add_decision(title="PostgreSQL", rationale="Transactions.", alternatives=["MongoDB"],
+                     source_file="report.md", page=1, quote="We chose PostgreSQL because registrations need "
+                     "transactions.", actor=f"{p.id}-M01", project_id=p.id)
+    team = orc.team_log(OBSERVER, p.id)
+    assert {e.action for e in team} == {"create_project", "coverage_snapshot", "add_member", "add_decision"}
+    assert others_named(OBSERVER, team) == [] and not any(f"{p.id}-M0" in blob(e) for e in team)
     assert str(tmp_path) not in " ".join(blob(e) for e in team)  # file names only, no local paths
+    assert not any(e.action == "create_project" for e in orc.team_log(OBSERVER, "P01"))
 
 
 def test_new_log_events_default_to_hidden():
@@ -193,7 +193,7 @@ def test_rows_from_an_old_database_are_hidden_after_upgrade(tmp_path):
         con.execute("INSERT INTO log_events (data) VALUES (?)", (leaky.model_dump_json(),))
     db.set_db_path(old)
     assert [e.action for e in db.load_log()] == ["submit_retest.apply_retest"]
-    assert orc.team_log("M04") == [] and orc.team_log(OBSERVER) == []
+    assert orc.team_log("M04", "P01") == [] and orc.team_log(OBSERVER, "P01") == []
 
 
 # --- the rendered app (Streamlit AppTest, offline)
@@ -204,7 +204,7 @@ def app():
     def open_as(viewer: str, page: str) -> AppTest:
         at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
         at.run()
-        at.sidebar.selectbox[0].set_value(viewer)
+        at.sidebar.selectbox(key="viewer").set_value(viewer)
         at.sidebar.radio[0].set_value(page)
         at.run()
         assert not at.exception, at.exception

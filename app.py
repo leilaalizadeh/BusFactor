@@ -17,6 +17,7 @@ import streamlit.components.v1 as components  # noqa: E402
 
 from busfactor import orchestrator as orc  # noqa: E402
 from busfactor.llm_provider import LLMUnavailable, llm_available  # noqa: E402
+from busfactor.coverage import explain_status  # noqa: E402
 from busfactor.missions import explain_mission  # noqa: E402
 from busfactor.models import MissionStatus, ReviewStatus  # noqa: E402
 
@@ -37,7 +38,7 @@ MISSION_PILL = {"proposed": ("Waiting for consent", "amber"), "accepted": ("Acce
                 "completed": ("Retest not passed yet", "gray"), "verified": ("Transfer verified", "green"),
                 "fallback": ("Ask the TA", "ink")}
 EVIDENCE_PILL = {"demonstrated": ("Demonstrated", "green"), "needs_practice": ("Needs practice", "amber"),
-                 "insufficient_evidence": ("Not assessed: no source", "gray")}
+                 "insufficient_evidence": ("Not scored: needs human review", "gray")}
 
 CSS = """
 <style>
@@ -354,9 +355,27 @@ BRAND = """<div class="bf-brand"><svg viewBox="0 0 24 24" fill="none" aria-hidde
 st.set_page_config(page_title="BusFactor", page_icon=":material/hub:", layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 orc.ensure_seeded()
-members = orc.members()
-names = {m.id: m.display_name for m in members.values()}
-cards = {d.id: d for d in orc.decisions()}
+# members / names / cards describe the OPEN project; they are (re)loaded in the sidebar once it is chosen
+members, names, cards, labels = {}, {}, {}, {}
+
+
+def load_project_state() -> None:
+    global members, names, cards, labels
+    members = orc.members()
+    names = {m.id: m.display_name for m in members.values()}
+    cards = {d.id: d for d in orc.decisions()}
+    labels = {**names, **{did: dlabel(did) for did in cards}}  # for explain_mission: people and decisions
+
+
+def dlabel(decision_id: str) -> str:
+    """Short decision label: live ids are <project>-D01, the demo uses D01."""
+    return decision_id.rsplit("-", 1)[-1]
+
+
+def need_viewer() -> None:
+    if viewer is None:
+        st.info("This project has no members yet. Add the team in **1. Project Setup** first.")
+        st.stop()
 
 
 # ------------------------------------------------------------------ small UI helpers
@@ -490,7 +509,8 @@ def overview() -> None:
     ]
     tiles = "".join(f'<div class="bf-kpi"><div class="k">{k}</div><div class="v">{v}</div><div class="s">{s}</div></div>'
                     for k, v, s in kpis)
-    show(f'<div class="bf-dark"><div class="kicker">Live demo · {esc(p.title if p else "BusFactor")}</div>'
+    kicker = "Synthetic demo" if orc.is_demo_project() else "Your project"
+    show(f'<div class="bf-dark"><div class="kicker">{kicker} · {esc(p.title if p else "BusFactor")}</div>'
          f'<h1>You split the work.<br><em>Don\'t split the understanding.</em></h1>'
          f'<p>BusFactor finds the project decisions only one teammate can explain, sets up peer teaching between '
          f'teammates, and checks with a new question that the knowledge really moved.</p>'
@@ -515,13 +535,24 @@ def overview() -> None:
                           f'<h4>{title}</h4><p>{esc(detail)}</p><div class="st">{state}</div></div>')
     st.subheader("Demo story")
     show(f'<div class="bf-story">{"".join(html_steps)}</div>')
-    show('<div class="bf-muted">All numbers come from the synthetic demo data and update live as you use the app.</div>')
+    show('<div class="bf-muted">' + ("All numbers come from the synthetic demo data and update live as you use "
+                                     "the app." if orc.is_demo_project() else
+                                     "All numbers come from this project's stored, consented evidence.") + '</div>')
 
 
 # ------------------------------------------------------------------ sidebar
 with st.sidebar:
     show(BRAND)
     st.caption("Your grade is shared. Your understanding shouldn't be isolated.")
+    all_projects = {p.id: p for p in orc.projects()}
+    project_ids = list(all_projects)
+    active = orc.active_project_id()
+    chosen = st.selectbox("Project", project_ids, index=project_ids.index(active) if active in project_ids else 0,
+                          format_func=lambda pid: all_projects[pid].title
+                          + (" · synthetic demo" if pid == orc.DEMO_PROJECT_ID else ""), key="project")
+    if chosen != active:
+        orc.open_project(chosen)
+    load_project_state()
     badge = orc.demo_banner()
     if badge:
         show(f'<div class="bf-badge"><b>{esc(badge)}</b>Fictional project, members, answers and consent.</div>')
@@ -529,16 +560,21 @@ with st.sidebar:
     qp_page, qp_as = st.query_params.get("page", ""), st.query_params.get("as", "")
     start_page = int(qp_page) if qp_page.isdigit() and 0 <= int(qp_page) < len(PAGES) else 0
     member_ids = list(members)
-    viewer = st.selectbox("Who are you?", member_ids, format_func=lambda m: f"{names[m]} ({m})",
-                          index=member_ids.index(qp_as) if qp_as in member_ids else 0)
-    show(f'<div class="bf-me">{avatar(viewer, 30)}<div><b>{esc(names[viewer])}</b>'
-         '<span>You see only your own answers</span></div></div>')
+    viewer = st.selectbox("Who are you? (demo identity switch, not a login)", member_ids,
+                          format_func=lambda m: names[m] + (f" ({m})" if orc.is_demo_project() else ""),
+                          index=member_ids.index(qp_as) if qp_as in member_ids else 0, key="viewer")
+    if viewer:
+        show(f'<div class="bf-me">{avatar(viewer, 30)}<div><b>{esc(names[viewer])}</b>'
+             '<span>Showing only this member\'s answers · no login yet</span></div></div>')
     page = st.radio("Go to", PAGES, captions=PAGE_HINTS, index=start_page)
     st.divider()
-    st.caption("Grader: " + ("live model" if llm_available() else "demo keyword rubric (offline)"))
-    if st.button("Reset demo data", width="stretch"):
-        orc.seed_demo_data()
-        st.rerun()
+    st.caption(orc.grading_mode())
+    with st.popover("Reset demo data"):
+        st.caption("Restores the synthetic demo to its starting point (coverage 1/5). Everything done in the demo "
+                   "is lost. Your own projects are not touched.")
+        if st.button("Reset the demo now", key="reset-demo", type="primary"):
+            orc.seed_demo_data()
+            st.rerun()
 
 
 # ------------------------------------------------------------------ 0. overview
@@ -548,40 +584,102 @@ if page == PAGES[0]:
 # ------------------------------------------------------------------ 1. setup
 elif page == PAGES[1]:
     p = orc.project()
+    demo = orc.is_demo_project()
     page_header(1, p.title if p else "Project Setup",
                 "The key decisions of the project. Each one is linked to the exact page it comes from.")
     if p:
-        show(f'<div class="bf-muted">{esc(p.course)} · source: {esc(", ".join(p.source_files))}</div>')
+        docs = ", ".join(p.source_files) or "no document yet"
+        show(f'<div class="bf-muted">{esc(p.course or "No course given")} · source: {esc(docs)}</div>')
 
-    with st.expander("Upload a different project file"):
-        if orc.demo_mode():
-            st.info(orc.DEMO_UPLOAD_REFUSED)
-        upload = st.file_uploader("PDF, Markdown or text. Only upload files you are allowed to share.",
-                                  type=["pdf", "md", "txt"], disabled=orc.demo_mode())
-        replace_ok = st.checkbox("I understand this starts a new project and deletes the current decisions, "
-                                 "answers, missions and retests.", disabled=orc.demo_mode())
-        if upload and st.button("Extract decision cards", type="primary", disabled=not replace_ok):
-            dest = ROOT / "uploads" / Path(upload.name).name
-            dest.parent.mkdir(exist_ok=True)
-            dest.write_bytes(upload.getvalue())
-            try:
-                orc.setup_project([str(dest)], actor=viewer)
-                st.success("Cards extracted. Cards without a verified quote can't be confirmed.")
-                st.rerun()
-            except (LLMUnavailable, RuntimeError, ValueError) as err:
-                st.error(f"Extraction failed: {err}")
+    by_status = {s: [d for d in cards.values() if d.review_status == s] for s in ReviewStatus}
+    if not members:
+        next_step = "Add the team members below. Each member then opts in to assessment on the Private Check page."
+    elif not cards:
+        next_step = "Add the project's key decisions: by hand (each quote is checked) or with the live model."
+    elif by_status[ReviewStatus.proposed]:
+        next_step = (f"Review {len(by_status[ReviewStatus.proposed])} proposed decision(s): check the quote, "
+                     "choose the owner, confirm. Nothing is assessed before it is confirmed.")
+    else:
+        next_step = "Decisions are confirmed. Members can now take private checks and owners their owner checks."
+    st.info(f"**Next step:** {next_step}")
 
-    verified = sum(d.review_status == ReviewStatus.verified for d in cards.values())
-    c1, c2, c3 = st.columns(3)
+    with st.expander("Start a new project"):
+        st.caption("A new project is added next to the existing ones; nothing is deleted. Members start with "
+                   "every consent off. Only upload documents you are allowed to share.")
+        with st.form("new-project"):
+            new_title = st.text_input("Project title")
+            new_course = st.text_input("Course")
+            new_doc = st.file_uploader("Project report (PDF, Markdown or text)", type=["pdf", "md", "txt"])
+            new_names = st.text_area("Team members, one name per line")
+            if st.form_submit_button("Create project", type="primary"):
+                try:
+                    orc.create_project(new_title, new_course, [(new_doc.name, new_doc.getvalue())] if new_doc else [],
+                                       new_names.splitlines(), actor=viewer or "agent")
+                    st.rerun()
+                except ValueError as err:
+                    st.error(str(err))
+
+    if not demo:
+        with st.container(border=True):
+            st.markdown(f"**Team members ({len(members)})**")
+            show('<div class="bf-muted">' + (esc(", ".join(names.values())) or "No members yet.")
+                 + " · Each member opts in for themselves on the Private Check page.</div>")
+            with st.form("add-member", clear_on_submit=True):
+                new_member = st.text_input("Add a member (name)")
+                if st.form_submit_button("Add member"):
+                    try:
+                        orc.add_member(new_member, actor=viewer or "agent")
+                        st.rerun()
+                    except ValueError as err:
+                        st.error(str(err))
+
+        with st.container(border=True):
+            st.markdown("**Add decisions**")
+            if not p.source_files:
+                st.warning("This project has no document, so no decision can be source-checked. Start a new project "
+                           "with its report.")
+            else:
+                if not cards:
+                    if st.button("Propose decisions with the live model", disabled=not llm_available()):
+                        try:
+                            orc.extract_project_decisions(actor=viewer or "agent")
+                            st.rerun()
+                        except (LLMUnavailable, ValueError) as err:
+                            st.error(str(err))
+                    if not llm_available():
+                        st.caption(orc.EXTRACTION_NEEDS_MODEL)
+                with st.form("add-decision", clear_on_submit=True):
+                    st.caption("Copy the quote word for word from the document; it is checked against that page.")
+                    d_title = st.text_input("Decision (what the team chose)")
+                    d_why = st.text_area("Rationale (why, in the team's words)", height=70)
+                    d_alts = st.text_input("Rejected alternatives (comma-separated)")
+                    d_file = st.selectbox("Document", p.source_files)
+                    d_page = st.number_input("Page", min_value=1, step=1)
+                    d_quote = st.text_area("Exact quote from that page", height=70)
+                    if st.form_submit_button("Add decision"):
+                        try:
+                            card = orc.add_decision(title=d_title, rationale=d_why, alternatives=d_alts.split(","),
+                                                    source_file=d_file, page=int(d_page), quote=d_quote,
+                                                    actor=viewer or "agent")
+                            if card.review_status == ReviewStatus.unsupported:
+                                st.warning("Added, but the quote was not found on that page, so it can never be "
+                                           "assessed. Check the page number and the exact wording.")
+                            else:
+                                st.rerun()
+                        except ValueError as err:
+                            st.error(str(err))
+
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Decisions", len(cards))
-    c2.metric("Verified", verified)
-    c3.metric("Without a source", sum(not d.source_refs for d in cards.values()))
+    c2.metric("Confirmed", len(by_status[ReviewStatus.verified]))
+    c3.metric("Needs review", len(by_status[ReviewStatus.proposed]))
+    c4.metric("No source", len(by_status[ReviewStatus.unsupported]))
 
     for d in cards.values():
         with st.container(border=True):
             label, kind = CARD_PILL[d.review_status.value]
             left, right = st.columns([5, 1.4])
-            left.markdown(f"**{d.id} · {d.title}**")
+            left.markdown(f"**{dlabel(d.id)} · {d.title}**")
             with right:
                 show(pill(label, kind))
             st.write(d.rationale)
@@ -592,19 +690,50 @@ elif page == PAGES[1]:
             show(f'<div class="bf-muted">{" · ".join(info)}</div>')
             for r in d.source_refs:
                 show(quote_block(r))
-            if not d.source_refs:
-                st.warning("No verified source, so this decision will not be assessed.")
-            if d.review_status == ReviewStatus.proposed and st.button("Confirm card", key=f"confirm-{d.id}"):
-                orc.confirm_decision(d.id, actor=viewer)
+            if d.review_status == ReviewStatus.unsupported:
+                st.warning("No verified source: the quote is not on the cited page, so this decision is never assessed.")
+            if d.review_status == ReviewStatus.proposed:
+                show('<div class="bf-muted">Proposed: not assessed until a member checks the quote and confirms it.'
+                     '</div>')
+                if viewer is None:
+                    show('<div class="bf-muted">Add members first: only a member can confirm a decision.</div>')
+                else:
+                    owner = st.selectbox("Owner (who made this decision)", [None, *members], key=f"owner-{d.id}",
+                                         format_func=lambda m: "not declared" if m is None else names[m])
+                    if st.button("Confirm card", key=f"confirm-{d.id}"):
+                        orc.confirm_decision(d.id, {"owner_id": owner} if owner else None, actor=viewer)
+                        st.rerun()
+
+    if not demo:
+        with st.expander("Delete this project"):
+            st.caption("Deletes this project's decisions, members, answers, missions and log. It cannot be undone. "
+                       "Other projects and the demo are not affected.")
+            typed = st.text_input("Type the project title to confirm", key="delete-title")
+            if st.button("Delete project", disabled=typed.strip() != p.title):
+                orc.delete_project(p.id, typed, actor=viewer or "agent")
                 st.rerun()
 
 # ------------------------------------------------------------------ 2. private check
 elif page == PAGES[2]:
+    need_viewer()
     page_header(2, f"Private Check · {names[viewer]}",
-                "Questions about decisions you didn't make. Only you can see your answers and feedback.")
+                "Questions about decisions you didn't make. Your answers and feedback are shown only to you as the "
+                "selected member; there is no login yet, so anyone using this app can switch identity.")
     st.info("Scores are practice feedback, not grades. You can answer in English or Italian; "
             "grammar and language never lower the score.", icon="🔒")
-    if not members[viewer].consent_assessment:
+    me = members[viewer]
+    with st.expander("My consent", expanded=not me.consent_assessment):
+        st.caption("Only the selected member can change these (no login yet), and you can withdraw at any time. "
+                   "Withdrawing removes your answers "
+                   "from the team's coverage." + (" In the demo, consent is synthetic." if orc.is_demo_project() else ""))
+        c_assess = st.checkbox("I agree to be assessed (private questions and retests)", value=me.consent_assessment,
+                               key="c-assess")
+        c_mentor = st.checkbox("I am willing to mentor a teammate", value=me.consent_mentor, key="c-mentor")
+        c_learn = st.checkbox("I am willing to learn from a teammate", value=me.consent_learner, key="c-learn")
+        if st.button("Save my consent", key="c-save"):
+            orc.update_consent(viewer, viewer, assessment=c_assess, mentor=c_mentor, learner=c_learn)
+            st.rerun()
+    if not me.consent_assessment:
         st.warning("You have not agreed to be assessed, so BusFactor will not ask or score you.")
         st.stop()
 
@@ -614,7 +743,7 @@ elif page == PAGES[2]:
             st.markdown("**Verify a decision you own**")
             show('<div class="bf-muted">Owning a decision is not proof you can defend it. One independent '
                  'question, no hints: only a full answer lets you mentor a teammate on it.</div>')
-            pick = st.selectbox("Decision", owned, format_func=lambda i: f"{i} · {cards[i].title}", key="own-pick")
+            pick = st.selectbox("Decision", owned, format_func=lambda i: f"{dlabel(i)} · {cards[i].title}", key="own-pick")
             if st.button("Start owner check", key="own-start"):
                 try:
                     orc.start_owner_check(viewer, pick)
@@ -625,7 +754,7 @@ elif page == PAGES[2]:
         others = [d for d in cards.values() if d.owner_id != viewer]
         choice = st.multiselect("Choose up to 2 decisions to be checked on",
                                 [d.id for d in others], default=orc.suggest_check_decisions(viewer),
-                                max_selections=2, format_func=lambda i: f"{i} · {cards[i].title}")
+                                max_selections=2, format_func=lambda i: f"{dlabel(i)} · {cards[i].title}")
         if st.button("Get my questions", type="primary"):
             made = orc.start_check(viewer, choice)
             st.success(f"{len(made)} new question(s) below." if made else "No new questions for these decisions.")
@@ -643,7 +772,7 @@ elif page == PAGES[2]:
             kind_label = ("Owner check · no hints" if orc.is_owner_check(q)
                           else q.question_type.value.replace("_", " ").title())
             show(f'{pill(kind_label, "blue")} '
-                 f'<span class="bf-muted">{esc(q.decision_id)} · {esc(cards[q.decision_id].title)}</span>')
+                 f'<span class="bf-muted">{esc(dlabel(q.decision_id))} · {esc(cards[q.decision_id].title)}</span>')
             show(f'<div class="bf-question">{esc(q.prompt)}</div>')
             with st.form(f"form-{q.id}"):
                 answer = st.text_area("Your answer", key=f"a-{q.id}", height=110)
@@ -658,7 +787,7 @@ elif page == PAGES[2]:
     for q, ev in sorted(done_qs, key=lambda x: x[0].id):
         with st.container(border=True):
             label, kind = EVIDENCE_PILL[ev.status.value]
-            show(f'{pill(label, kind)} <span class="bf-muted">{esc(q.decision_id)} · '
+            show(f'{pill(label, kind)} <span class="bf-muted">{esc(dlabel(q.decision_id))} · '
                  f'{esc(q.question_type.value.replace("_", " "))}</span>')
             show(f'<div class="bf-title" style="margin:0.4rem 0">{esc(q.prompt)}</div>')
             show(f'<div class="bf-muted">Your answer: {esc(ev.answer)}</div>')
@@ -676,7 +805,7 @@ elif page == PAGES[3]:
     gained = report.numerator - start["numerator"]
     spof_drop = len(start.get("spof", [])) - len(report.spof_decision_ids)
     stats = [
-        ("Before", coverage_text(start["numerator"], start["denominator"]), "when the demo started"),
+        ("Before", coverage_text(start["numerator"], start["denominator"]), "when the project started"),
         ("Now", coverage_text(report.numerator, report.denominator),
          f"<b>+{gained} decision{'s' if gained != 1 else ''}</b> covered" if gained > 0 else "no change yet"),
         ("Single points of failure", str(len(report.spof_decision_ids)),
@@ -688,20 +817,29 @@ elif page == PAGES[3]:
          f'<div class="bf-pstats">{tiles}</div>'
          f'<div class="note">The ring fills as more decisions get a second person who can explain them.</div></div>')
 
+    confirmed = [d for d in cards.values() if d.review_status == ReviewStatus.verified]
+    show(f'<div class="bf-muted">{report.denominator} of {len(confirmed)} confirmed decisions have been assessed'
+         f'{f" · {len(cards) - len(confirmed)} not confirmed yet, so not counted" if len(confirmed) < len(cards) else ""}'
+         '.</div>')
+
     st.subheader("Decisions")
     team_size = len(members)
     for c in report.per_decision:
+        unconfirmed = cards[c.decision_id].review_status != ReviewStatus.verified
         with st.container(border=True):
-            label, kind = COVERAGE_PILL[c.status]
+            label, kind = ("Not confirmed", "gray") if unconfirmed else COVERAGE_PILL[c.status]
             n = len(c.demonstrated_by)
             left, mid, right = st.columns([4.5, 1.6, 1.8])
-            left.markdown(f"**{c.decision_id} · {cards[c.decision_id].title}**")
+            left.markdown(f"**{dlabel(c.decision_id)} · {cards[c.decision_id].title}**")
             with mid:
                 dots = "".join('<i class="on"></i>' if k < n else "<i></i>" for k in range(team_size))
                 show(f'<div class="bf-dots2 {c.status}" title="{n} of {team_size}">{dots}</div>'
                      f'<span class="bf-muted">{n} can explain it</span>')
             with right:
                 show(pill(label, kind))
+            why, step = (("It is not confirmed or has no verified source, so it is not counted.",
+                          "Review it in Project Setup.") if unconfirmed else explain_status(c))
+            show(f'<div class="bf-muted">{esc(why)} <b>Next:</b> {esc(step)}</div>')
 
     show('<div class="bf-muted" style="margin-top:0.8rem">Decision Coverage = critical decisions that 2 or more '
          'members can explain ÷ critical decisions that have been assessed. This is a prototype indicator, '
@@ -709,6 +847,7 @@ elif page == PAGES[3]:
 
 # ------------------------------------------------------------------ 4. missions
 elif page == PAGES[4]:
+    need_viewer()
     page_header(4, "Teach Each Other",
                 "For each decision only one person can explain, a teammate who understands it teaches one who doesn't.")
     if st.button("Find knowledge silos and propose missions", type="primary"):
@@ -726,21 +865,21 @@ elif page == PAGES[4]:
         with st.container(border=True):
             label, kind = MISSION_PILL[shown.value]
             left, right = st.columns([5, 1.8])
-            left.markdown(f"**{m.decision_id} · {cards[m.decision_id].title}**")
+            left.markdown(f"**{dlabel(m.decision_id)} · {cards[m.decision_id].title}**")
             with right:
                 show(pill(label, kind))
 
             if m.status == MissionStatus.fallback:
                 st.write(m.fallback_message)
                 if involved:
-                    show(f'<div class="bf-muted">{esc(explain_mission(m, names))}</div>')
+                    show(f'<div class="bf-muted">{esc(explain_mission(m, labels))}</div>')
                 continue
             if not (involved or public):
                 show('<div class="bf-muted">The people in this mission are shown only to them until both accept.</div>')
                 continue
 
             show(flow(m))
-            show(f'<div class="bf-muted">{esc(explain_mission(m, names))}</div>')
+            show(f'<div class="bf-muted">{esc(explain_mission(m, labels))}</div>')
             st.markdown("\n".join(f"{i}. {step}" for i, step in enumerate(m.steps, 1)))
 
             if involved and m.status == MissionStatus.proposed:
@@ -754,6 +893,7 @@ elif page == PAGES[4]:
 
 # ------------------------------------------------------------------ 5. retest
 elif page == PAGES[5]:
+    need_viewer()
     page_header(5, f"Defense Retest · {names[viewer]}",
                 "After the teaching session, answer a new question on your own. No hints are available here.")
     mine = [m for m in orc.missions() if m.learner_id == viewer and m.mentor_id]
@@ -763,7 +903,7 @@ elif page == PAGES[5]:
         with st.container(border=True):
             label, kind = MISSION_PILL[m.status.value]
             left, right = st.columns([5, 1.8])
-            left.markdown(f"**{m.decision_id} · {cards[m.decision_id].title}**")
+            left.markdown(f"**{dlabel(m.decision_id)} · {cards[m.decision_id].title}**")
             with right:
                 show(pill(label, kind))
 
@@ -771,7 +911,7 @@ elif page == PAGES[5]:
                 st.write("Both people must accept the mission before the retest.")
                 continue
             if m.status == MissionStatus.verified:
-                show(win("Transfer verified", f"You explained {m.decision_id} on a new question, with no hints. "
+                show(win("Transfer verified", f"You explained {dlabel(m.decision_id)} on a new question, with no hints. "
                                               "Team coverage went up."))
                 continue
             if not members[viewer].consent_assessment:
@@ -783,10 +923,15 @@ elif page == PAGES[5]:
                 show(f'<div class="bf-muted">Your answer to the last question was recorded: {esc(ev.feedback)}</div>')
             if q is None or ev is not None:
                 if st.button("Start a new independent question", key=f"rt-{m.id}"):
-                    orc.start_retest(m.id, viewer)
-                    st.rerun()
+                    try:
+                        orc.start_retest(m.id, viewer)
+                        st.rerun()
+                    except ValueError as err:  # every scenario was used: no pass-chasing loop
+                        st.warning(str(err))
                 continue
 
+            if q.scenario:
+                show(f'<div class="bf-muted">New situation: {esc(q.scenario)}</div>')
             show(f'<div class="bf-question">{esc(q.prompt)}</div>')
             with st.form(f"retest-{m.id}"):
                 answer = st.text_area("Your answer", height=130)
@@ -807,6 +952,7 @@ elif page == PAGES[5]:
 # ------------------------------------------------------------------ 6. evidence & limits
 else:
     page_header(6, "Evidence & Limits", "Where every decision comes from, what the agent did, and what it can't do.")
+    need_viewer()
     log = orc.team_log(viewer)  # team events + the viewer's own private steps, never other members'
 
     def log_table(events):
@@ -816,7 +962,7 @@ else:
     sources, actions, abstain, limits = st.tabs(["Sources", "Action log", "Abstentions & blocked", "Limits"])
     with sources:
         st.dataframe(pd.DataFrame([{
-            "Decision": d.id, "Status": d.review_status.value,
+            "Decision": dlabel(d.id), "Status": d.review_status.value,
             "File": ", ".join(r.file for r in d.source_refs) or "none",
             "Page": ", ".join(str(r.page) for r in d.source_refs),
             "Quote": " / ".join(r.quote for r in d.source_refs),
@@ -837,7 +983,13 @@ else:
             "- Scores are practice feedback, not grades. A score from the model can be wrong.\n"
             "- One correct answer shows someone explained one decision on one day, not that they'll remember it.\n"
             "- Decision Coverage is a prototype indicator, not a validated metric.\n"
-            "- In demo mode, answers are scored with a keyword list on made-up data, as a stand-in for the model.\n"
-            "- No source means no assessment. If nobody can explain a decision, the app points to the TA.\n"
+            "- In the synthetic demo, answers are scored offline with a keyword rubric on made-up data, as a stand-in "
+            "for the model. A score of 2 also needs explained reasoning and the scenario's own conclusion.\n"
+            "- In your own projects without the live model, nothing is scored automatically: answers wait for human "
+            "review. With the model, unsure or inconsistent grades also go to human review.\n"
+            "- Answers that try to instruct the grader are never scored. The app cannot stop anyone from using an "
+            "outside AI tool.\n"
+            "- No source means no assessment. A decision is assessed only after a member confirms it.\n"
+            "- If nobody can explain a decision, the app points to the course material or the TA.\n"
             "- In a small team even totals can identify people, so the team view shows only counts per decision."
         )

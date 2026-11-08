@@ -35,6 +35,21 @@ def decision_status(decision: DecisionCard, evidence: list[AssessmentEvidence]) 
     return DecisionCoverage(decision_id=decision.id, demonstrated_by=demonstrated, status=status)
 
 
+def explain_status(cov: DecisionCoverage) -> tuple[str, str]:
+    """(why the decision has this status, the next useful step). Counts only, never names or scores."""
+    n = len(cov.demonstrated_by)
+    return {
+        "covered": (f"{n} members have each demonstrated it, so the team does not depend on one person.",
+                    "Keep it fresh: practise one new 'what if' before the defense."),
+        "single_point_of_failure": ("Only 1 member has demonstrated it. If they are absent, nobody can defend it.",
+                                    "Propose a teaching mission so a second member learns it."),
+        "no_explainer": ("Members were checked, but nobody has demonstrated it yet.",
+                         "The decision's owner can take an owner check; otherwise use the course material or ask the TA."),
+        "not_assessed": ("Nobody has answered a question on it yet. That is unknown, not failed.",
+                         "Members can take a private check on it."),
+    }[cov.status]
+
+
 def compute_coverage(decisions: list[DecisionCard], evidence: list[AssessmentEvidence]) -> CoverageReport:
     critical = sorted((d for d in decisions if d.importance == Importance.critical), key=lambda d: d.id)
     per_decision = [decision_status(d, evidence) for d in critical]

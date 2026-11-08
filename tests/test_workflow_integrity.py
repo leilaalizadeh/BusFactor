@@ -8,11 +8,10 @@ from busfactor import database as db
 from busfactor import orchestrator as orc
 from busfactor.models import DecisionCard, InterviewQuestion, Member, MissionStatus, Project, ReviewStatus, SourceRef
 from busfactor.rubrics import REFUSAL
+from demo_answers import GOOD, strong_answer
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO = ROOT / "data" / "demo"
-GOOD = ("Because the classes are imbalanced, accuracy is misleading: always predicting no finding already gives 88%. "
-        "If false negatives cost 10 times more, I would focus on recall, for example report F2 next to F1.")
 WEAK = "Accuracy is bad with imbalanced classes."
 
 
@@ -134,8 +133,8 @@ def test_a_retest_question_can_be_answered_only_once():
     with pytest.raises(ValueError):
         orc.submit_retest(m.id, GOOD, "M04")
     assert evidence_count("M04") == before and orc.team_coverage().numerator == 1
-    orc.start_retest(m.id, "M04")
-    assert orc.submit_retest(m.id, GOOD, "M04").mission.status == MissionStatus.verified
+    second = orc.start_retest(m.id, "M04")  # a different scenario with its own rubric
+    assert orc.submit_retest(m.id, strong_answer(second), "M04").mission.status == MissionStatus.verified
 
 
 def test_retest_question_must_belong_to_the_mission():
@@ -195,57 +194,109 @@ def test_demo_mode_refuses_to_process_an_upload():
 
 
 def new_card(card_id: str, title: str) -> DecisionCard:
+    # deliberately claims the demo project: the orchestrator must re-scope it to the new project
     return DecisionCard(id=card_id, project_id="P01", title=title, rationale="Because the data required it.",
                         source_refs=[SourceRef(file="group_report.md", page=1, quote="We chose it.")])
 
 
-def test_a_live_project_starts_clean(monkeypatch, tmp_path):
+@pytest.fixture
+def live_model(monkeypatch):
+    """Live mode with the extractor faked: no network, no real key."""
+    monkeypatch.setenv("DEMO_MODE", "false")
+    monkeypatch.setenv("LLM_API_KEY", "test-key-not-real")
+
+
+def demo_state():
+    return ([d.title for d in orc.decisions("P01")], len(db.evidence_for_coverage("P01")), orc.missions("P01"))
+
+
+def test_a_live_project_is_created_next_to_the_demo(monkeypatch, tmp_path, live_model):
     m = accepted_d03()
     orc.start_retest(m.id, "M04")
-    monkeypatch.setenv("DEMO_MODE", "false")
-    monkeypatch.setattr(orc, "extract_decisions", lambda files: [new_card("D01", "New A"), new_card("D02", "New B")])
-    orc.setup_project([str(tmp_path / "group_report.md")], actor="M01")
+    before = demo_state()
+    monkeypatch.setattr(orc, "extract_decisions",
+                        lambda files, **kw: [new_card("D01", "New A"), new_card("D02", "New B")])
+    cards = orc.setup_project([str(tmp_path / "group_report.md")], actor="agent")
+    pid = orc.active_project_id()
 
-    assert [d.title for d in orc.decisions()] == ["New A", "New B"]
-    assert orc.missions() == [] and db.load_all(InterviewQuestion) == []
-    assert all(db.get_private_evidence(v, v) == [] for v in orc.members())
-    assert orc.team_coverage().denominator == 0
+    assert pid != "P01" and [c.id for c in cards] == [f"{pid}-D01", f"{pid}-D02"]
+    assert all(c.project_id == pid for c in orc.decisions())  # re-scoped, never the demo's id
+    assert orc.missions() == [] and db.load_all(InterviewQuestion, project_id=pid) == []
+    assert orc.members() == {} and orc.team_coverage().denominator == 0
     assert orc.project().title == "group_report" and orc.project().source_files == ["group_report.md"]
     assert orc.demo_banner() is None  # live data is not labelled synthetic
     assert [(s["numerator"], s["denominator"]) for s in orc.coverage_snapshots()] == [(0, 0)]
+    assert demo_state() == before  # the demo project was not touched
 
 
-def test_a_failed_replacement_keeps_the_old_project(monkeypatch, tmp_path):
-    m = accepted_d03()
-    before = ([d.title for d in orc.decisions()], len(db.evidence_for_coverage()), orc.missions())
-    monkeypatch.setenv("DEMO_MODE", "false")
-    monkeypatch.setattr(orc, "extract_decisions", lambda files: [new_card("D01", "New A"), new_card("D02", "New B")])
+def test_a_failed_extraction_leaves_no_half_project(monkeypatch, tmp_path, live_model):
+    accepted_d03()
+    before = demo_state()
+    monkeypatch.setattr(orc, "extract_decisions",
+                        lambda files, **kw: [new_card("D01", "New A"), new_card("D02", "New B")])
     real_upsert = db._upsert
 
     def crash_on_second_card(con, record):
-        if getattr(record, "id", None) == "D02":
+        if getattr(record, "id", "").endswith("-D02"):
             raise RuntimeError("disk full")
         return real_upsert(con, record)
     monkeypatch.setattr(db, "_upsert", crash_on_second_card)
     with pytest.raises(RuntimeError):
         orc.setup_project([str(tmp_path / "group_report.md")])
-    assert ([d.title for d in orc.decisions()], len(db.evidence_for_coverage()), orc.missions()) == before
-    assert db.get_record(orc.TeachingMission, m.id).status == MissionStatus.accepted
+    assert [p.id for p in orc.projects()] == ["P01"] and orc.active_project_id() == "P01"
+    assert demo_state() == before
 
 
 def test_a_long_session_keeps_the_badge_and_the_baseline(monkeypatch):
     monkeypatch.setenv("DEMO_MODE", "false")
     for i in range(600):  # more than load_log's default window of 500 events
-        db.log("agent", "noise", {"i": i})
+        db.log("agent", "noise", {"i": i}, project_id="P01")
     assert orc.demo_banner() is not None
     assert orc.coverage_snapshots()[0]["label"] == "baseline"
 
 
-def test_a_live_upload_without_cards_keeps_the_current_project(monkeypatch, tmp_path):
-    monkeypatch.setenv("DEMO_MODE", "false")
-    monkeypatch.setattr(orc, "extract_decisions", lambda files: [])
-    with pytest.raises(ValueError, match="kept"):
+def test_a_database_from_before_projects_is_migrated(tmp_path):
+    """A busfactor.db written before Improve2 (no project_id anywhere) opens and keeps its data."""
+    import sqlite3
+    old = tmp_path / "before_improve2.db"
+    decision = json.loads((DEMO / "decisions.json").read_text(encoding="utf-8"))["decisions"][2]
+    question = json.loads((DEMO / "questions.json").read_text(encoding="utf-8"))["questions"][7]
+    evidence = json.loads((DEMO / "evidence.json").read_text(encoding="utf-8"))["evidence"][7]
+    for legacy in (question, evidence):
+        legacy.pop("project_id")
+    with sqlite3.connect(old) as con:
+        for table in ("projects", "decisions", "members", "questions", "evidence", "missions"):
+            con.execute(f"CREATE TABLE {table} (id TEXT PRIMARY KEY, member_id TEXT, decision_id TEXT, "
+                        "data TEXT NOT NULL)")
+        con.execute("CREATE TABLE log_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL, "
+                    "audience TEXT NOT NULL DEFAULT 'internal')")
+        con.execute("INSERT INTO decisions VALUES (?, NULL, ?, ?)", (decision["id"], decision["id"], json.dumps(decision)))
+        con.execute("INSERT INTO questions VALUES (?, ?, ?, ?)",
+                    (question["id"], question["member_id"], question["decision_id"], json.dumps(question)))
+        con.execute("INSERT INTO evidence VALUES (?, ?, ?, ?)",
+                    (evidence["id"], evidence["member_id"], evidence["decision_id"], json.dumps(evidence)))
+    db.set_db_path(old)
+    [q] = db.load_all(InterviewQuestion)
+    assert q.id == question["id"] and q.project_id == "P01"
+    [ev] = db.evidence_for_coverage("P01")
+    assert ev.id == evidence["id"] and ev.project_id == "P01" and ev.answer == evidence["answer"]
+    with sqlite3.connect(old) as con:
+        assert con.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+        indexes = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    assert {"idx_evidence_project", "idx_evidence_member", "idx_log_events_project"} <= indexes
+
+
+def test_records_without_a_project_are_refused():
+    stray = db.get_record(InterviewQuestion, "Q-D03-M04-why").model_copy(update={"id": "Q-stray", "project_id": None})
+    with pytest.raises(ValueError, match="no project_id"):
+        db.save_record(stray)
+
+
+def test_an_upload_without_cards_creates_nothing(monkeypatch, tmp_path, live_model):
+    monkeypatch.setattr(orc, "extract_decisions", lambda files, **kw: [])
+    with pytest.raises(ValueError, match="nothing was changed"):
         orc.setup_project([str(tmp_path / "empty.md")])
+    assert [p.id for p in orc.projects()] == ["P01"]
     assert len(orc.decisions()) == 5 and orc.demo_banner() is not None
 
 
@@ -254,17 +305,23 @@ def open_as(viewer: str, page: str):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
     at.run()
-    at.sidebar.selectbox[0].set_value(viewer)
+    at.sidebar.selectbox(key="viewer").set_value(viewer)
     at.sidebar.radio[0].set_value(page)
     at.run()
     assert not at.exception, at.exception
     return at
 
 
-def test_setup_page_does_not_offer_processing_in_demo_mode():
+def test_offline_setup_never_pretends_to_extract(tmp_path):
+    # the demo project offers no extraction at all
     at = open_as("M01", "1. Project Setup")
-    assert any(orc.DEMO_UPLOAD_REFUSED in i.value for i in at.info)
-    assert all(c.disabled for c in at.checkbox)
+    assert not any(b.label == "Propose decisions with the live model" for b in at.button)
+    # an offline live project: the model button is disabled and the page says why
+    p = orc.create_project("Campus Events App", "Databases", [("report.md", b"We chose PostgreSQL.")], ["Ada"])
+    at = open_as(f"{p.id}-M01", "1. Project Setup")
+    extract = next(b for b in at.button if b.label == "Propose decisions with the live model")
+    assert extract.disabled and any(orc.EXTRACTION_NEEDS_MODEL in c.value for c in at.caption)
+    assert any("Next step" in i.value for i in at.info)
 
 
 def test_retest_page_asks_for_a_new_question_after_an_answer():

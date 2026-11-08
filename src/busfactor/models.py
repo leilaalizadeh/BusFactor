@@ -1,9 +1,14 @@
-# Shared contracts: EXACTLY brief section 5. Do not edit without telling the whole team.
+# Shared contracts: brief section 5, extended in Improve2 (tell the whole team about changes).
+# Improve2: project_id on questions/evidence/missions (project isolation; None only in pure-logic
+# unit tests, the database refuses to store it), explicit opt-in consent (defaults False),
+# owner_check / scenario on questions (independent owner verification and scenario-specific transfer).
 from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
+
+DEMO_PROJECT_ID = "P01"   # the synthetic demo; its fixed ids D01-D05 / M01-M04 exist only in this project
 
 
 class ReviewStatus(str, Enum):
@@ -68,9 +73,9 @@ class Member(BaseModel):
     id: str
     project_id: str
     display_name: str
-    consent_assessment: bool = True
-    consent_mentor: bool = True
-    consent_learner: bool = True
+    consent_assessment: bool = False    # explicit opt-in: nobody is assessed by default
+    consent_mentor: bool = False
+    consent_learner: bool = False
 
 
 class InterviewQuestion(BaseModel):
@@ -79,9 +84,12 @@ class InterviewQuestion(BaseModel):
     member_id: str
     prompt: str
     question_type: QuestionType
-    rubric_expectations: list[str] = []      # points a score-2 answer must contain
+    rubric_expectations: list[str] = []      # points a score-2 answer must contain (scenario-specific for transfer)
     source_refs: list[SourceRef] = []
     mode: Literal["practice", "independent"] = "practice"
+    project_id: Optional[str] = None
+    owner_check: bool = False                # independent check of a decision's declared owner
+    scenario: Optional[str] = None           # transfer only: the condition that changed
 
 
 class AssessmentEvidence(BaseModel):
@@ -98,6 +106,7 @@ class AssessmentEvidence(BaseModel):
     visibility: Literal["private", "team"] = "private"
     is_synthetic: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    project_id: Optional[str] = None
 
 
 class TeachingMission(BaseModel):
@@ -112,6 +121,7 @@ class TeachingMission(BaseModel):
     status: MissionStatus = MissionStatus.proposed
     retest_question_id: Optional[str] = None
     fallback_message: Optional[str] = None
+    project_id: Optional[str] = None
 
 
 class DecisionCoverage(BaseModel):

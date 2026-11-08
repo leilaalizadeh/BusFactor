@@ -56,15 +56,40 @@ def complete_json(prompt: str, schema: dict, fixture: Optional[dict] = None) -> 
         text = _call_claude(prompt, schema)
         try:
             data = json.loads(text)
+            if not isinstance(data, dict):
+                raise ValueError("model output is not a JSON object")
             missing = [k for k in schema.get("required", []) if k not in data]
             if missing:
                 raise ValueError(f"missing fields {missing}")
+            check_types(data, schema)
             data["is_synthetic"] = False
             return data
         except (json.JSONDecodeError, ValueError) as err:
             last_error = err
             log.warning("Bad JSON from model, retrying: %s", err)
     raise LLMUnavailable(f"Model returned invalid JSON twice: {last_error}")
+
+
+_JSON_TYPES = {"string": str, "integer": int, "boolean": bool, "array": list, "object": dict, "number": (int, float)}
+
+
+def check_types(data, schema: dict, path: str = "$") -> None:
+    """Validate types and enums of model output against the schema (raises ValueError)."""
+    expected = schema.get("type")
+    py = _JSON_TYPES.get(expected)
+    if py is not None:
+        bad_bool = expected in ("integer", "number") and isinstance(data, bool)
+        if not isinstance(data, py) or bad_bool:
+            raise ValueError(f"{path} should be {expected}")
+    if "enum" in schema and data not in schema["enum"]:
+        raise ValueError(f"{path} must be one of {schema['enum']}")
+    if expected == "object":
+        for key, sub in schema.get("properties", {}).items():
+            if key in data:
+                check_types(data[key], sub, f"{path}.{key}")
+    if expected == "array" and "items" in schema:
+        for i, item in enumerate(data):
+            check_types(item, schema["items"], f"{path}[{i}]")
 
 
 def _strict(schema: dict) -> dict:

@@ -3,6 +3,7 @@
 Checks that what the pages show matches what is stored: 1/5 -> private check -> both consents
 -> blocked answer request -> failed retest -> new question -> passed retest -> 2/5.
 """
+import html
 from pathlib import Path
 
 import pytest
@@ -10,11 +11,10 @@ from streamlit.testing.v1 import AppTest
 
 from busfactor import database as db
 from busfactor import orchestrator as orc
-from busfactor.models import MissionStatus
+from busfactor.models import InterviewQuestion, MissionStatus
+from demo_answers import strong_answer
 
 ROOT = Path(__file__).resolve().parents[1]
-GOOD = ("Because the classes are imbalanced, accuracy is misleading: always predicting no finding already gives 88%. "
-        "If false negatives cost 10 times more, I would focus on recall, for example report F2 next to F1.")
 MISSION = "T-D03-M04"
 
 
@@ -26,7 +26,7 @@ def demo_db(tmp_path, monkeypatch):
 
 
 def go(at: AppTest, viewer: str, page: str) -> AppTest:
-    at.sidebar.selectbox[0].set_value(viewer)
+    at.sidebar.selectbox(key="viewer").set_value(viewer)
     at.sidebar.radio[0].set_value(page)
     at.run()
     assert not at.exception, at.exception
@@ -85,7 +85,8 @@ def test_full_demo_journey_through_the_ui():
     assert len(at.text_area) == 0  # answered: a retry needs a new question
     at.button(key=f"rt-{MISSION}").click()
     at.run()
-    submit(at, at.text_area[0], GOOD)
+    second = db.get_record(InterviewQuestion, db.get_record(orc.TeachingMission, MISSION).retest_question_id)
+    submit(at, at.text_area[0], strong_answer(second))  # this scenario's own strong answer
     assert "Transfer verified" in text(at) and "2/5 (40%)" in text(at)
     assert db.get_record(orc.TeachingMission, MISSION).status == MissionStatus.verified
 
@@ -93,3 +94,59 @@ def test_full_demo_journey_through_the_ui():
     go(at, "M01", "3. Team Coverage")
     assert "2/5 (40%)" in text(at)
     assert (orc.team_coverage().numerator, orc.team_coverage().denominator) == (2, 5)
+
+
+REPORT = ROOT / "tests" / "fixtures" / "campus_events_report.md"
+PG_QUOTE = ("We chose PostgreSQL instead of MongoDB because event registrations must be transactional: "
+            "a seat must never be sold twice.")
+
+
+def test_a_new_project_through_the_ui_offline():
+    """Real members, consent, review and an owner check on a new project, with no model (offline)."""
+    p = orc.create_project("Campus Events App", "Databases", [(REPORT.name, REPORT.read_bytes())], ["Ada", "Bilal"])
+    ada, bilal = f"{p.id}-M01", f"{p.id}-M02"
+    card = orc.add_decision(title="Use PostgreSQL instead of MongoDB", rationale="Seats must never be sold twice.",
+                            alternatives=["MongoDB"], source_file=REPORT.name, page=1, quote=PG_QUOTE, actor=ada)
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
+    at.run()
+    assert at.sidebar.selectbox(key="project").value == p.id
+    assert not any("DEMO DATA" in md.value for md in at.sidebar.markdown)  # real project: no synthetic badge
+
+    # review: the owner is declared and the card confirmed through the page
+    go(at, ada, "1. Project Setup")
+    assert any("Review 1 proposed" in i.value for i in at.info)
+    at.selectbox(key=f"owner-{card.id}").set_value(ada)
+    at.button(key=f"confirm-{card.id}").click()
+    at.run()
+    stored = db.get_record(orc.DecisionCard, card.id)
+    assert stored.review_status.value == "verified" and stored.owner_id == ada
+
+    # consent is off until Ada turns it on herself
+    go(at, ada, "2. Private Check")
+    assert any("not agreed to be assessed" in w.value for w in at.warning)
+    at.checkbox(key="c-assess").check()
+    at.checkbox(key="c-mentor").check()
+    at.button(key="c-save").click()
+    at.run()
+    assert orc.members()[ada].consent_assessment and not orc.members()[bilal].consent_assessment
+
+    # owner check without a model: a project question, and an honest "needs human review"
+    at.button(key="own-start").click()
+    at.run()
+    q = next(q for q, _ in orc.my_questions(ada, ada) if q.owner_check)
+    assert "Owner check · no hints" in text(at) and html.escape(q.prompt) in text(at)
+    assert not [t for t in ("F1", "Random Forest", "hospital") if t in q.prompt + " ".join(q.rubric_expectations)]
+    submit(at, at.text_area(key=f"a-{q.id}"), "We chose PostgreSQL because seats must never be sold twice.")
+    assert "Not scored: needs human review" in text(at)
+    assert orc.team_coverage().denominator == 0
+
+    # coverage explains itself, in counts only
+    go(at, bilal, "3. Team Coverage")
+    assert "0 of 1 confirmed decisions have been assessed" in text(at)
+    assert "unknown, not failed" in text(at)
+
+    # switching back to the demo shows the synthetic badge and its untouched 1/5
+    at.sidebar.selectbox(key="project").set_value("P01")
+    at.run()
+    go(at, "M01", "3. Team Coverage")
+    assert "1/5 (20%)" in text(at) and any("DEMO DATA" in md.value for md in at.sidebar.markdown)

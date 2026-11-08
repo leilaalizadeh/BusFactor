@@ -1,74 +1,646 @@
 {
-  "_note": "SYNTHETIC DEMO DATA — fixed questions and a keyword rubric so DEMO_MODE runs offline. The keyword scorer is a demo stand-in for the LLM grader, not a validated assessment.",
+  "_note": "SYNTHETIC DEMO DATA — fixed questions and a keyword rubric so DEMO_MODE runs offline. The keyword scorer is a demo stand-in for the LLM grader, not a validated assessment. Bank entries apply ONLY to the demo project P01; transfer questions carry a scenario-specific rubric whose 'required' point is the conclusion the changed condition calls for.",
+  "project_id": "P01",
   "decisions": {
     "D01": {
       "why": "Why did the team remove duplicate images and impute missing labels before training, instead of training on the raw data?",
       "what_if": "What if the team had kept the 310 duplicate images? What would happen to the reported test F1, and why?",
       "transfer": [
-        "Imagine a new batch where the same patient appears in several images. How would you split or clean the data, and why?",
-        "What if half of the missing labels could not be recovered from the radiologist's notes? What would you do with those images, and why?"
+        {
+          "prompt": "Imagine a new batch where the same patient appears in several images. How would you split or clean the data, and why?",
+          "scenario": "The same patient now appears in several images.",
+          "rubric": [
+            {
+              "point": "Split by patient, so all images of one patient stay in the same subset",
+              "keywords": [
+                "by patient",
+                "per patient",
+                "patient-level",
+                "patient level",
+                "group split",
+                "grouped split",
+                "groupkfold",
+                "patient id",
+                "same patient in the same",
+                "all images of a patient",
+                "all images of one patient",
+                "split on patient"
+              ],
+              "required": true
+            },
+            {
+              "point": "Otherwise the same patient is seen in training and test (leakage)",
+              "keywords": [
+                "leak",
+                "in both",
+                "train and test",
+                "training and test",
+                "seen",
+                "memori"
+              ]
+            },
+            {
+              "point": "Leakage would make the test scores look better than they really are",
+              "keywords": [
+                "inflate",
+                "optimistic",
+                "too high",
+                "overestimat",
+                "unrealistic",
+                "look better"
+              ]
+            }
+          ]
+        },
+        {
+          "prompt": "What if half of the missing labels could not be recovered from the radiologist's notes? What would you do with those images, and why?",
+          "scenario": "Half of the missing labels cannot be recovered from the radiologist's notes.",
+          "rubric": [
+            {
+              "point": "Do not guess labels: drop those images or have an expert relabel them",
+              "keywords": [
+                "drop",
+                "remove them",
+                "exclude",
+                "discard",
+                "leave them out",
+                "relabel",
+                "re-label",
+                "ask a radiologist",
+                "expert",
+                "annotat"
+              ],
+              "required": true
+            },
+            {
+              "point": "Guessed labels would add label noise and a wrong training signal",
+              "keywords": [
+                "noise",
+                "noisy",
+                "wrong label",
+                "incorrect label",
+                "mislabel",
+                "guess",
+                "bias"
+              ]
+            },
+            {
+              "point": "Check that dropping them does not change the class balance or remove many positives",
+              "keywords": [
+                "class balance",
+                "imbalance",
+                "positive",
+                "distribution",
+                "how many",
+                "share"
+              ]
+            }
+          ]
+        }
       ],
       "hint": "Think about what the model is allowed to see before it is tested.",
       "rubric": [
-        {"point": "Duplicates can leak between the training and test sets", "keywords": ["leak", "both the training and the test", "train and test", "in both", "seen the test", "contaminat"]},
-        {"point": "Leakage inflates the scores (over-optimistic results)", "keywords": ["inflate", "optimistic", "too high", "overestimat", "unrealistic"]},
-        {"point": "Imputing labels from radiologist notes keeps usable images", "keywords": ["imput", "radiologist", "throw away", "kept more images", "lose data", "losing data"]}
+        {
+          "point": "Duplicates can leak between the training and test sets",
+          "keywords": [
+            "leak",
+            "both the training and the test",
+            "train and test",
+            "in both",
+            "seen the test",
+            "contaminat"
+          ]
+        },
+        {
+          "point": "Leakage inflates the scores (over-optimistic results)",
+          "keywords": [
+            "inflate",
+            "optimistic",
+            "too high",
+            "overestimat",
+            "unrealistic"
+          ]
+        },
+        {
+          "point": "Imputing labels from radiologist notes keeps usable images",
+          "keywords": [
+            "imput",
+            "radiologist",
+            "throw away",
+            "kept more images",
+            "lose data",
+            "losing data"
+          ]
+        }
       ]
     },
     "D02": {
       "why": "Why did the team use Random Forest instead of Logistic Regression as the baseline?",
       "what_if": "What if the hospital required that every prediction be easy to explain to a doctor? Would the Random Forest choice still hold? Why?",
       "transfer": [
-        "What if the features were already engineered so that the two classes were almost linearly separable? Which baseline would you pick now, and why?",
-        "What if training time had to stay under one second on a laptop? Would you still start from Random Forest? Why?"
+        {
+          "prompt": "What if the features were already engineered so that the two classes were almost linearly separable? Which baseline would you pick now, and why?",
+          "scenario": "The features are already almost linearly separable.",
+          "rubric": [
+            {
+              "point": "Logistic Regression becomes the better first baseline",
+              "keywords": [
+                "logistic",
+                "linear model",
+                "linear classifier"
+              ],
+              "required": true
+            },
+            {
+              "point": "A linear boundary is enough, so Random Forest's non-linearity adds little",
+              "keywords": [
+                "linear boundary",
+                "linearly separable",
+                "adds little",
+                "no advantage",
+                "not needed",
+                "unnecessary",
+                "enough"
+              ]
+            },
+            {
+              "point": "Logistic Regression is faster and easier to interpret",
+              "keywords": [
+                "faster",
+                "interpret",
+                "simpler",
+                "explain",
+                "coefficient",
+                "cheaper"
+              ]
+            }
+          ]
+        },
+        {
+          "prompt": "What if training time had to stay under one second on a laptop? Would you still start from Random Forest? Why?",
+          "scenario": "Training must take under one second on a laptop.",
+          "rubric": [
+            {
+              "point": "Start from Logistic Regression or a much smaller, faster model",
+              "keywords": [
+                "logistic",
+                "linear model",
+                "fewer trees",
+                "smaller forest",
+                "small forest",
+                "fewer estimators",
+                "lightweight",
+                "simpler model"
+              ],
+              "required": true
+            },
+            {
+              "point": "A Random Forest with many trees is slower to train",
+              "keywords": [
+                "slow",
+                "many trees",
+                "training time",
+                "too long",
+                "expensive",
+                "costly",
+                "time budget"
+              ]
+            },
+            {
+              "point": "Tradeoff: some F1 may be lost in exchange for speed",
+              "keywords": [
+                "lose",
+                "lower f1",
+                "lower score",
+                "tradeoff",
+                "trade-off",
+                "trade off",
+                "worse",
+                "performance drop"
+              ]
+            }
+          ]
+        }
       ],
       "hint": "Think about what kind of relationships each model can represent.",
       "rubric": [
-        {"point": "Random Forest captures non-linear interactions between features", "keywords": ["non-linear", "nonlinear", "interaction", "linearly separable", "complex relationship"]},
-        {"point": "No manual feature engineering needed", "keywords": ["feature engineering", "engineered", "handcraft", "hand-craft", "manual feature"]},
-        {"point": "Tradeoff: Logistic Regression is faster/more interpretable but scored lower", "keywords": ["interpret", "faster", "simpler", "explain", "scored lower", "lower on validation", "validation"]}
+        {
+          "point": "Random Forest captures non-linear interactions between features",
+          "keywords": [
+            "non-linear",
+            "nonlinear",
+            "interaction",
+            "linearly separable",
+            "complex relationship"
+          ]
+        },
+        {
+          "point": "No manual feature engineering needed",
+          "keywords": [
+            "feature engineering",
+            "engineered",
+            "handcraft",
+            "hand-craft",
+            "manual feature"
+          ]
+        },
+        {
+          "point": "Tradeoff: Logistic Regression is faster/more interpretable but scored lower",
+          "keywords": [
+            "interpret",
+            "faster",
+            "simpler",
+            "explain",
+            "scored lower",
+            "lower on validation",
+            "validation"
+          ]
+        }
       ]
     },
     "D03": {
       "why": "Why did the team report F1 instead of accuracy as the headline metric?",
       "what_if": "What if the dataset were balanced, with 50% of images showing a finding? Would F1 still be clearly better than accuracy? Why?",
       "transfer": [
-        "What if missing a finding (a false negative) became 10 times more costly than a false alarm? Which metric would you report, and why?",
-        "What if the test set contained only 2% positive images? How would that change what accuracy and F1 tell you?"
+        {
+          "prompt": "What if missing a finding (a false negative) became 10 times more costly than a false alarm? Which metric would you report, and why?",
+          "scenario": "A false negative becomes 10 times more costly than a false alarm.",
+          "rubric": [
+            {
+              "point": "Prioritise recall: report recall or a recall-weighted metric such as F2",
+              "keywords": [
+                "focus on recall",
+                "prioritise recall",
+                "prioritize recall",
+                "maximise recall",
+                "maximize recall",
+                "recall over precision",
+                "higher recall",
+                "more weight on recall",
+                "weight recall",
+                "recall matters more",
+                "recall is more important",
+                "f2",
+                "sensitivity"
+              ],
+              "required": true
+            },
+            {
+              "point": "Accuracy stays misleading because of the class imbalance",
+              "keywords": [
+                "misleading",
+                "imbalanc",
+                "88",
+                "majority",
+                "always predict"
+              ]
+            },
+            {
+              "point": "Tradeoff: accept more false alarms in order to miss fewer findings",
+              "keywords": [
+                "false alarm",
+                "false positive",
+                "lower precision",
+                "threshold",
+                "trade",
+                "more alarms"
+              ]
+            }
+          ]
+        },
+        {
+          "prompt": "What if the test set contained only 2% positive images? How would that change what accuracy and F1 tell you?",
+          "scenario": "Only 2% of the test images are positive.",
+          "rubric": [
+            {
+              "point": "Accuracy becomes even more misleading: always predicting 'no finding' gives about 98%",
+              "keywords": [
+                "98",
+                "even more misleading",
+                "more misleading",
+                "even higher accuracy",
+                "accuracy goes up",
+                "accuracy would be higher",
+                "accuracy rises",
+                "higher accuracy"
+              ],
+              "required": true
+            },
+            {
+              "point": "F1 still shows how well the rare positive cases are found (precision and recall)",
+              "keywords": [
+                "precision",
+                "recall",
+                "positive class",
+                "rare",
+                "minority"
+              ]
+            },
+            {
+              "point": "With so few positives, the test F1 is noisy and needs enough positive cases",
+              "keywords": [
+                "noisy",
+                "unstable",
+                "few positive",
+                "variance",
+                "confidence interval",
+                "small number",
+                "very few"
+              ]
+            }
+          ]
+        }
       ],
       "hint": "Think about what the share of 'finding' images does to each metric.",
       "rubric": [
-        {"point": "Class imbalance: only about 12% of images show a finding", "keywords": ["imbalance", "imbalanced", "12%", "minority", "rare", "few positive", "balanced"]},
-        {"point": "Accuracy is misleading: always predicting 'no finding' gives about 88%", "keywords": ["88", "always predict", "misleading", "majority class", "predicts no finding"]},
-        {"point": "F1 is built on precision and recall of the positive class", "keywords": ["precision", "recall", "false negative", "false positive", "positive class", "f2"]}
+        {
+          "point": "Class imbalance: only about 12% of images show a finding",
+          "keywords": [
+            "imbalance",
+            "imbalanced",
+            "12%",
+            "minority",
+            "rare",
+            "few positive",
+            "balanced"
+          ]
+        },
+        {
+          "point": "Accuracy is misleading: always predicting 'no finding' gives about 88%",
+          "keywords": [
+            "88",
+            "always predict",
+            "misleading",
+            "majority class",
+            "predicts no finding"
+          ]
+        },
+        {
+          "point": "F1 is built on precision and recall of the positive class",
+          "keywords": [
+            "precision",
+            "recall",
+            "false negative",
+            "false positive",
+            "positive class",
+            "f2"
+          ]
+        }
       ]
     },
     "D04": {
       "why": "Why did the team use a stratified train/validation/test split instead of a purely random split?",
       "what_if": "What if the dataset had 50,000 images instead of 4,200? Would stratification still matter as much? Why?",
       "transfer": [
-        "What if you had to use 5-fold cross-validation instead of one fixed split? What would you do about the folds, and why?",
-        "What if a new test set had to be only 100 images? How would you build it, and why?"
+        {
+          "prompt": "What if you had to use 5-fold cross-validation instead of one fixed split? What would you do about the folds, and why?",
+          "scenario": "5-fold cross-validation replaces the single fixed split.",
+          "rubric": [
+            {
+              "point": "Use stratified folds, so every fold keeps the share of positive images",
+              "keywords": [
+                "stratified k",
+                "stratifiedkfold",
+                "stratified fold",
+                "stratify the folds",
+                "stratified cross",
+                "stratify each fold",
+                "each fold keeps",
+                "every fold keeps"
+              ],
+              "required": true
+            },
+            {
+              "point": "Unstratified folds could get very few positives by chance",
+              "keywords": [
+                "few positive",
+                "by chance",
+                "no positive",
+                "unbalanced fold",
+                "randomly"
+              ]
+            },
+            {
+              "point": "So the per-fold F1 would vary a lot and be unreliable",
+              "keywords": [
+                "unstable",
+                "variance",
+                "vary",
+                "unreliable",
+                "noisy",
+                "fluctuat",
+                "comparable"
+              ]
+            }
+          ]
+        },
+        {
+          "prompt": "What if a new test set had to be only 100 images? How would you build it, and why?",
+          "scenario": "The new test set may contain only 100 images.",
+          "rubric": [
+            {
+              "point": "Stratify the sample so it still holds about 12 positive images",
+              "keywords": [
+                "stratif",
+                "12 positive",
+                "about 12",
+                "12%",
+                "same share",
+                "same proportion",
+                "enough positive"
+              ],
+              "required": true
+            },
+            {
+              "point": "A random 100-image sample could contain very few positives",
+              "keywords": [
+                "few positive",
+                "by chance",
+                "no positive",
+                "only a few",
+                "randomly"
+              ]
+            },
+            {
+              "point": "F1 on 100 images is noisy, so report the uncertainty",
+              "keywords": [
+                "noisy",
+                "unstable",
+                "variance",
+                "confidence interval",
+                "uncertain",
+                "error bar",
+                "bootstrap",
+                "unreliable"
+              ]
+            }
+          ]
+        }
       ],
       "hint": "Think about how many positive images end up in a small test set.",
       "rubric": [
-        {"point": "Stratification keeps the same share of positives in every subset", "keywords": ["same share", "same proportion", "same ratio", "class distribution", "stratif", "each fold", "every fold"]},
-        {"point": "A random split could leave a small test set with very few positives", "keywords": ["few positive", "random split", "by chance", "small test", "no positive"]},
-        {"point": "Otherwise the F1 estimate is unstable/unreliable", "keywords": ["unstable", "variance", "unreliable", "noisy", "fluctuat", "comparable"]}
+        {
+          "point": "Stratification keeps the same share of positives in every subset",
+          "keywords": [
+            "same share",
+            "same proportion",
+            "same ratio",
+            "class distribution",
+            "stratif",
+            "each fold",
+            "every fold"
+          ]
+        },
+        {
+          "point": "A random split could leave a small test set with very few positives",
+          "keywords": [
+            "few positive",
+            "random split",
+            "by chance",
+            "small test",
+            "no positive"
+          ]
+        },
+        {
+          "point": "Otherwise the F1 estimate is unstable/unreliable",
+          "keywords": [
+            "unstable",
+            "variance",
+            "unreliable",
+            "noisy",
+            "fluctuat",
+            "comparable"
+          ]
+        }
       ]
     },
     "D05": {
       "why": "Why did the team report that the model was not tested on images from other hospitals?",
       "what_if": "What if another hospital wanted to use the model tomorrow? What would you tell them, and why?",
       "transfer": [
-        "What if a second hospital's images gave F1 = 0.50? How would you explain the drop, and what would you do next?",
-        "What if the same hospital bought a new scanner? Would you trust the model on the new images? Why?"
+        {
+          "prompt": "What if a second hospital's images gave F1 = 0.50? How would you explain the drop, and what would you do next?",
+          "scenario": "A second hospital's images give F1 = 0.50.",
+          "rubric": [
+            {
+              "point": "Explain the drop as a distribution (domain) shift between hospitals",
+              "keywords": [
+                "shift",
+                "different scanner",
+                "different population",
+                "different patients",
+                "domain",
+                "distribution",
+                "different equipment",
+                "generali"
+              ],
+              "required": true
+            },
+            {
+              "point": "The original test set came from the same single hospital, so it overestimated real-world performance",
+              "keywords": [
+                "one hospital",
+                "single hospital",
+                "same hospital",
+                "overestimat",
+                "optimistic",
+                "only tested"
+              ]
+            },
+            {
+              "point": "Next step: validate, fine-tune or retrain with data from the new hospital before use",
+              "keywords": [
+                "fine-tun",
+                "fine tun",
+                "retrain",
+                "external validation",
+                "collect data",
+                "adapt",
+                "recalibrat",
+                "validate on"
+              ]
+            }
+          ]
+        },
+        {
+          "prompt": "What if the same hospital bought a new scanner? Would you trust the model on the new images? Why?",
+          "scenario": "The same hospital buys a new scanner.",
+          "rubric": [
+            {
+              "point": "Do not trust it automatically: a new scanner can shift the image distribution",
+              "keywords": [
+                "shift",
+                "distribution",
+                "domain",
+                "not trust",
+                "wouldn't trust",
+                "would not trust",
+                "not automatically",
+                "different images"
+              ],
+              "required": true
+            },
+            {
+              "point": "All training images came from one scanner type",
+              "keywords": [
+                "one scanner",
+                "same scanner",
+                "single scanner",
+                "one type of scanner",
+                "old scanner"
+              ]
+            },
+            {
+              "point": "Validate on labelled images from the new scanner before relying on it",
+              "keywords": [
+                "validate",
+                "test it on",
+                "test on",
+                "check on",
+                "evaluate on",
+                "labelled sample",
+                "monitor"
+              ]
+            }
+          ]
+        }
       ],
       "hint": "Think about where all the training images came from.",
       "rubric": [
-        {"point": "All images come from one hospital and one scanner type", "keywords": ["one hospital", "single hospital", "one scanner", "same scanner", "single site", "same hospital"]},
-        {"point": "So the team cannot claim the model generalises to other scanners/populations", "keywords": ["generali", "other hospitals", "different scanner", "population", "dataset shift", "distribution shift", "domain shift"]},
-        {"point": "External validation on another hospital's data is needed", "keywords": ["external validation", "validate on", "another hospital", "external data", "test on other", "new hospital"]}
+        {
+          "point": "All images come from one hospital and one scanner type",
+          "keywords": [
+            "one hospital",
+            "single hospital",
+            "one scanner",
+            "same scanner",
+            "single site",
+            "same hospital"
+          ]
+        },
+        {
+          "point": "So the team cannot claim the model generalises to other scanners/populations",
+          "keywords": [
+            "generali",
+            "other hospitals",
+            "different scanner",
+            "population",
+            "dataset shift",
+            "distribution shift",
+            "domain shift"
+          ]
+        },
+        {
+          "point": "External validation on another hospital's data is needed",
+          "keywords": [
+            "external validation",
+            "validate on",
+            "another hospital",
+            "external data",
+            "test on other",
+            "new hospital"
+          ]
+        }
       ]
     }
   }

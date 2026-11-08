@@ -20,7 +20,8 @@
           "quote": "We removed duplicate images and imputed missing labels before training, because duplicates could leak between the training and test sets and inflate our scores."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D01-M03-why",
@@ -41,7 +42,8 @@
           "quote": "We removed duplicate images and imputed missing labels before training, because duplicates could leak between the training and test sets and inflate our scores."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D01-M02-why",
@@ -62,7 +64,8 @@
           "quote": "We removed duplicate images and imputed missing labels before training, because duplicates could leak between the training and test sets and inflate our scores."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D02-M02-why",
@@ -83,7 +86,8 @@
           "quote": "We chose Random Forest instead of Logistic Regression as our baseline because it captured non-linear interactions between features without manual feature engineering."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D02-M01-why",
@@ -104,7 +108,8 @@
           "quote": "We chose Random Forest instead of Logistic Regression as our baseline because it captured non-linear interactions between features without manual feature engineering."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D02-M04-why",
@@ -125,7 +130,8 @@
           "quote": "We chose Random Forest instead of Logistic Regression as our baseline because it captured non-linear interactions between features without manual feature engineering."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D03-M02-why",
@@ -146,7 +152,8 @@
           "quote": "We report F1 instead of accuracy as our headline metric because of the class imbalance."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D03-M04-why",
@@ -167,7 +174,8 @@
           "quote": "We report F1 instead of accuracy as our headline metric because of the class imbalance."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D04-M03-why",
@@ -188,7 +196,8 @@
           "quote": "We used a stratified train/validation/test split (70/15/15) so that each subset keeps the same share of positive images as the full dataset."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D04-M01-why",
@@ -209,7 +218,8 @@
           "quote": "We used a stratified train/validation/test split (70/15/15) so that each subset keeps the same share of positive images as the full dataset."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D05-M04-why",
@@ -230,7 +240,8 @@
           "quote": "The model was not tested on images from other hospitals, so we cannot claim it generalises to different scanners or patient populations."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     },
     {
       "id": "Q-D05-M02-why",
@@ -251,7 +262,8 @@
           "quote": "The model was not tested on images from other hospitals, so we cannot claim it generalises to different scanners or patient populations."
         }
       ],
-      "mode": "practice"
+      "mode": "practice",
+      "project_id": "P01"
     }
   ]
 }
