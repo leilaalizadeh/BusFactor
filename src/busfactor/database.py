@@ -90,7 +90,7 @@ def _migrate(con: sqlite3.Connection) -> None:
 
 @contextmanager
 def _connect():
-    con = sqlite3.connect(_db_path)
+    con = sqlite3.connect(_db_path, timeout=30)  # wait for a lock (e.g. antivirus scan on Windows) instead of failing
     try:
         for table in TABLES.values():
             con.execute(f"CREATE TABLE IF NOT EXISTS {table} "
@@ -169,6 +169,17 @@ def get_private_evidence(viewer_id: str, member_id: str) -> list[AssessmentEvide
     return sorted(_rows(AssessmentEvidence, "WHERE member_id = ?", (member_id,)), key=lambda e: e.created_at)
 
 
+def evidence_awaiting_review(project_id: str) -> list[AssessmentEvidence]:
+    """Answers the model could not score (insufficient_evidence) in one project.
+
+    For the human-review queue ONLY: the caller must have checked the reviewer's access and each
+    member's consent_review (orchestrator.review_queue does). Never display this list otherwise.
+    """
+    from busfactor.models import EvidenceStatus
+    return [e for e in _rows(AssessmentEvidence, "WHERE project_id = ?", (project_id,))
+            if e.status == EvidenceStatus.insufficient_evidence]
+
+
 def evidence_for_coverage(project_id: Optional[str] = None) -> list[AssessmentEvidence]:
     """Evidence of one project (all with None), for the agent's coverage/mission logic ONLY. Never display."""
     if project_id:
@@ -245,6 +256,10 @@ def reset() -> None:
 
 
 def _delete_project(con: sqlite3.Connection, project_id: str) -> None:
+    # access codes of the project's members and its reviewer code go with it
+    con.execute("DELETE FROM settings WHERE key IN (SELECT 'cred:member:' || id FROM members WHERE project_id = ?)",
+                (project_id,))
+    con.execute("DELETE FROM settings WHERE key = ?", (f"cred:reviewer:{project_id}",))
     for table in [*TABLES.values(), "log_events"]:
         con.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
 

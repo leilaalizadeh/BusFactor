@@ -16,7 +16,7 @@ from typing import Optional
 
 from busfactor.coverage import compute_coverage, latest_by_member
 from busfactor.models import (
-    AssessmentEvidence, DecisionCard, EvidenceStatus, Member, MissionStatus, TeachingMission,
+    AssessmentEvidence, DecisionCard, EvidenceStatus, Member, MissionStatus, TeachingMission, utcnow,
 )
 
 MAX_MISSIONS_PER_MENTOR = 2
@@ -89,7 +89,7 @@ def set_consent(mission: TeachingMission, member_id: str) -> TeachingMission:
     else:
         raise PermissionError(f"{member_id} is not part of mission {mission.id}.")
     if mission.mentor_consent and mission.learner_consent:
-        mission = mission.model_copy(update={"status": MissionStatus.accepted})
+        mission = mission.model_copy(update={"status": MissionStatus.accepted, "accepted_at": utcnow()})
     return mission
 
 
@@ -106,7 +106,9 @@ def apply_retest(mission: TeachingMission, retest_evidence: AssessmentEvidence) 
     if retest_evidence.status == EvidenceStatus.insufficient_evidence:
         return mission  # not judged (needs human review): neither a pass nor a failed attempt
     passed = retest_evidence.rubric_score == 2 and retest_evidence.status == EvidenceStatus.demonstrated
-    return mission.model_copy(update={"status": MissionStatus.verified if passed else MissionStatus.completed})
+    if passed:
+        return mission.model_copy(update={"status": MissionStatus.verified, "verified_at": utcnow()})
+    return mission.model_copy(update={"status": MissionStatus.completed})
 
 
 def explain_mission(mission: TeachingMission, names: Optional[dict[str, str]] = None) -> str:

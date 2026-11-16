@@ -22,16 +22,21 @@ creating a project never deletes another one, and deleting one needs its exact t
 """
 from __future__ import annotations
 
+import csv
+import io
 import os
 import re
 import shutil
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from busfactor import auth
 from busfactor import database as db
-from busfactor.coverage import compute_coverage
+from busfactor.coverage import compute_coverage, explain_status
 from busfactor.ingestion import load_pages
 from busfactor.interview import UnsupportedDecision, create_interview, create_transfer_test, is_assessable
 from busfactor.knowledge import add_manual_card, confirm_card, decision_id, extract_decisions
@@ -39,11 +44,13 @@ from busfactor.llm_provider import demo_mode, llm_available
 from busfactor.missions import apply_retest, recommend_missions, set_consent
 from busfactor.models import (
     DEMO_PROJECT_ID, AssessmentEvidence, CoverageReport, DecisionCard, EvidenceStatus, InterviewQuestion, LogEvent,
-    Member, MissionStatus, Project, QuestionType, ReviewStatus, TeachingMission,
+    Member, MissionStatus, Project, QuestionType, ReviewStatus, TeachingMission, utcnow,
 )
 from busfactor.rubrics import INJECTION_FLAGGED, REFUSAL, detect_injection, evaluate_answer, is_answer_request, practice_hint
 
 STEP_BUDGET = 6
+REMINDER_DAYS = int(os.getenv("BUSFACTOR_REMINDER_DAYS", "2"))    # an accepted mission with no retest yet
+FOLLOWUP_DAYS = int(os.getenv("BUSFACTOR_FOLLOWUP_DAYS", "3"))    # spaced follow-up after a passed retest
 MAX_DECISIONS = 10
 DEMO_BADGE = "DEMO DATA — synthetic"
 ACTIVE_PROJECT = "active_project"
@@ -258,15 +265,18 @@ def add_member(display_name: str, actor: str = "agent", project_id: Optional[str
     return member
 
 
-def update_consent(member_id: str, viewer_id: str, *, assessment: bool, mentor: bool, learner: bool) -> Member:
-    """Only the member can give or withdraw their own consent."""
+def update_consent(member_id: str, viewer_id: str, *, assessment: bool, mentor: bool, learner: bool,
+                   review: Optional[bool] = None) -> Member:
+    """Only the member can give or withdraw their own consent. `review=None` keeps the current choice."""
     if viewer_id != member_id:
         raise PermissionError("Only the member can change their own consent.")
-    member = _member(member_id).model_copy(update={
-        "consent_assessment": bool(assessment), "consent_mentor": bool(mentor), "consent_learner": bool(learner)})
+    current = _member(member_id)
+    member = current.model_copy(update={
+        "consent_assessment": bool(assessment), "consent_mentor": bool(mentor), "consent_learner": bool(learner),
+        "consent_review": current.consent_review if review is None else bool(review)})
     db.save_records(member)
     db.log(member_id, "update_consent", {"assessment": member.consent_assessment, "mentor": member.consent_mentor,
-                                         "learner": member.consent_learner},
+                                         "learner": member.consent_learner, "review": member.consent_review},
            audience=[member_id], project_id=member.project_id)
     return member
 
@@ -646,3 +656,225 @@ def submit_retest(mission_id: str, answer: str, viewer_id: str) -> Result:
     s("apply_retest", mission_id=mission_id, status=mission.status.value)
     report = _snapshot("coverage changed", member.project_id, only_if_changed=True)
     return Result(evidence=ev, mission=mission, coverage=report)
+
+
+# ------------------------------------------------------------------ access codes
+
+def is_protected(project_id: Optional[str] = None) -> bool:
+    """True once the project uses access codes (see auth.py). The demo never does."""
+    pid = _pid(project_id)
+    return pid != DEMO_PROJECT_ID and auth.is_protected(pid)
+
+
+def protect_project(project_id: Optional[str] = None, actor: str = "agent") -> dict:
+    """Issue a personal code for every member and a reviewer code. Returns the plain codes: show them once."""
+    pid = _pid(project_id)
+    if pid == DEMO_PROJECT_ID:
+        raise ValueError(DEMO_IS_FIXED)
+    codes = auth.issue_all(pid, sorted(members(pid)))
+    db.log(actor, "access_codes_issued", {"members": len(codes["members"])}, audience=db.TEAM, project_id=pid)
+    return codes
+
+
+# ------------------------------------------------------------------ reminders and spaced follow-up
+
+def _days_since(moment: Optional[datetime], now: datetime) -> Optional[int]:
+    return None if moment is None else (now - moment).days
+
+
+def followup_due(mission: TeachingMission, now: Optional[datetime] = None) -> bool:
+    """A verified mission whose learner has not yet taken the spaced follow-up and FOLLOWUP_DAYS have passed."""
+    now = now or utcnow()
+    return (mission.status == MissionStatus.verified and not mission.followup_done and mission.verified_at is not None
+            and now - mission.verified_at >= timedelta(days=FOLLOWUP_DAYS))
+
+
+def reminders(member_id: str, now: Optional[datetime] = None) -> list[dict]:
+    """Nudges for one member: an accepted mission still waiting for its teaching session or retest, and a due
+    follow-up check for the learner. Counts days only: no answers or scores."""
+    member = _member(member_id)
+    now = now or utcnow()
+    found = []
+    for m in missions(member.project_id):
+        if member_id not in (m.mentor_id, m.learner_id):
+            continue
+        if m.status == MissionStatus.accepted and not m.followup_done:
+            idle = _days_since(m.accepted_at, now)
+            if idle is not None and idle >= REMINDER_DAYS:
+                found.append({"kind": "session", "mission_id": m.id, "decision_id": m.decision_id, "days": idle})
+        if member_id == m.learner_id and followup_due(m, now):
+            found.append({"kind": "followup", "mission_id": m.id, "decision_id": m.decision_id,
+                          "days": _days_since(m.verified_at, now)})
+    return found
+
+
+def start_followup(mission_id: str, viewer_id: str, now: Optional[datetime] = None) -> InterviewQuestion:
+    """Spaced follow-up: after FOLLOWUP_DAYS the learner gets one more NEW independent question on the decision.
+
+    The mission goes back to `accepted` with that question, so the normal retest flow scores it. A pass verifies
+    the mission again; a miss leaves it `completed` and the learner's latest evidence (and so coverage) shows it.
+    """
+    mission = _mission(mission_id)
+    if viewer_id != mission.learner_id:
+        raise PermissionError("Only the learner takes the follow-up check.")
+    member = _require_assessment_consent(viewer_id)
+    _require_same_project(member, mission.project_id)
+    if mission.followup_done:
+        raise ValueError("The follow-up check for this mission was already started.")
+    if mission.status != MissionStatus.verified:
+        raise ValueError("A follow-up check comes after a verified retest.")
+    if not followup_due(mission, now):
+        raise ValueError(f"The follow-up check opens {FOLLOWUP_DAYS} days after the retest was passed.")
+    decision = db.get_record(DecisionCard, mission.decision_id)
+    mine = [q for q in db.load_all(InterviewQuestion, member_id=viewer_id) if q.decision_id == mission.decision_id]
+    used = [q.prompt for q in mine if q.question_type == QuestionType.transfer]
+    prior = (db.get_record(InterviewQuestion, mission.retest_question_id) if mission.retest_question_id else None) \
+        or create_interview(decision, viewer_id, [])
+    q = create_transfer_test(decision, prior, used)   # raises ValueError when no unused scenario is left
+    db.save_records(q, mission.model_copy(update={"status": MissionStatus.accepted, "followup_done": True,
+                                                  "retest_question_id": q.id, "verified_at": None}))
+    db.log(viewer_id, "start_followup", {"mission_id": mission_id, "question_id": q.id}, audience=[viewer_id],
+           project_id=member.project_id)
+    return q
+
+
+# ------------------------------------------------------------------ human review queue
+
+@dataclass
+class ReviewItem:
+    """One answer the model could not score. No member identity: the reviewer sees the answer, not the person."""
+    evidence_id: str
+    decision_id: str
+    decision_title: str
+    question_type: str
+    prompt: str
+    rubric_expectations: list[str]
+    answer: str
+    source_quotes: list[str]
+    note: str
+
+
+def _require_reviewer(pid: str, reviewer_code: Optional[str]) -> None:
+    if auth.is_protected(pid) and not auth.verify_reviewer(pid, reviewer_code):
+        raise PermissionError("A valid reviewer code is needed to open the review queue.")
+
+
+def _reviewable(pid: str) -> list[AssessmentEvidence]:
+    """Unscored answers of members who consented to assessment AND to human review."""
+    team = members(pid)
+    return sorted((e for e in db.evidence_awaiting_review(pid)
+                   if e.member_id in team and team[e.member_id].consent_assessment
+                   and team[e.member_id].consent_review), key=lambda e: e.created_at)
+
+
+def review_queue(project_id: Optional[str] = None, reviewer_code: Optional[str] = None) -> list[ReviewItem]:
+    pid = _pid(project_id)
+    _require_reviewer(pid, reviewer_code)
+    items = []
+    for e in _reviewable(pid):
+        question, card = db.get_record(InterviewQuestion, e.question_id), db.get_record(DecisionCard, e.decision_id)
+        if question is None or card is None:
+            continue
+        items.append(ReviewItem(
+            evidence_id=e.id, decision_id=card.id, decision_title=card.title,
+            question_type=question.question_type.value, prompt=question.prompt,
+            rubric_expectations=list(question.rubric_expectations), answer=e.answer,
+            source_quotes=[r.quote for r in card.source_refs if r.quote], note=e.feedback))
+    return items
+
+
+def apply_review(evidence_id: str, score: int, feedback: str = "", project_id: Optional[str] = None,
+                 reviewer_code: Optional[str] = None) -> Result:
+    """A human reviewer scores an answer the model abstained on. 0/1/2 as in the rubric.
+
+    The member's evidence is replaced in place (same id), so it is no longer in the queue. If the answer was
+    a mission's retest, the mission is updated in the same transaction, exactly as for an automatic score.
+    The log records that a review happened, never the answer or the score.
+    """
+    pid = _pid(project_id)
+    _require_reviewer(pid, reviewer_code)
+    if score not in (0, 1, 2):
+        raise ValueError("A review score is 0, 1 or 2.")
+    ev = next((e for e in _reviewable(pid) if e.id == evidence_id), None)
+    if ev is None:
+        raise LookupError("That answer is not waiting for review (or the member has not agreed to human review).")
+    note = " ".join(feedback.split())
+    reviewed = ev.model_copy(update={
+        "rubric_score": score,
+        "status": EvidenceStatus.demonstrated if score == 2 else EvidenceStatus.needs_practice,
+        "feedback": "Reviewed by a human" + (f": {note}" if note else "."),
+        "assessment_version": "human-review-v1", "created_at": utcnow()})
+    mission = next((m for m in missions(pid) if m.retest_question_id == ev.question_id
+                    and m.status in (MissionStatus.accepted, MissionStatus.completed)), None)
+    if mission is not None:
+        mission = apply_retest(mission, reviewed)
+        db.save_records(reviewed, mission)
+    else:
+        db.save_records(reviewed)
+    db.log("reviewer", "human_review", {"evidence_id": ev.id}, audience=[ev.member_id], project_id=pid)
+    return Result(evidence=reviewed, mission=mission, coverage=_snapshot("coverage changed", pid, only_if_changed=True))
+
+
+# ------------------------------------------------------------------ team report export (counts only)
+
+STATUS_WORDS = {"covered": "Covered (2+ people can explain it)", "single_point_of_failure": "Single point of failure",
+                "no_explainer": "No explainer yet", "not_assessed": "Not assessed"}
+
+
+def _cell(text: object) -> str:
+    return str(text).replace("|", "\\|").replace("\n", " ").strip()
+
+
+def export_team_report(project_id: Optional[str] = None, now: Optional[datetime] = None) -> str:
+    """Markdown report for the team (and, if they choose, their TA). Only counts: never a name, answer or score."""
+    pid = _pid(project_id)
+    p, report, snaps = project(pid), team_coverage(pid), coverage_snapshots(pid)
+    cards = {d.id: d for d in decisions(pid)}
+    stamp = (now or utcnow()).strftime("%Y-%m-%d %H:%M UTC")
+    pct = f" ({report.numerator / report.denominator:.0%})" if report.denominator else ""
+    lines = [f"# BusFactor team report: {p.title}", "",
+             f"{p.course or 'No course given'} · generated {stamp}"
+             + (" · **DEMO DATA, synthetic**" if pid == DEMO_PROJECT_ID else ""), "",
+             "## Decision coverage", "",
+             f"- **Now:** {report.numerator}/{report.denominator}{pct}" if report.denominator
+             else "- **Now:** not measurable yet (no assessed decisions)"]
+    if snaps:
+        lines.append(f"- **At the start:** {snaps[0]['numerator']}/{snaps[0]['denominator']}")
+    lines += [f"- **Single points of failure:** {len(report.spof_decision_ids)}", "",
+              "## Decisions", "", "| ID | Decision | Status | Can explain it | Source | Next step |",
+              "|---|---|---|---|---|---|"]
+    for c in report.per_decision:
+        card = cards[c.decision_id]
+        if card.review_status != ReviewStatus.verified:
+            status, step = "Not confirmed (not counted)", "Review the card in Project Setup."
+        else:
+            status, step = STATUS_WORDS[c.status], explain_status(c)[1]
+        src = "; ".join(f"{r.file} p.{r.page}" for r in card.source_refs) or "none"
+        lines.append(f"| {_cell(c.decision_id.rsplit('-', 1)[-1])} | {_cell(card.title)} | {status} | "
+                     f"{len(c.demonstrated_by)} | {_cell(src)} | {_cell(step)} |")
+    counts = Counter(m.status.value for m in missions(pid))
+    lines += ["", "## Teaching missions", ""]
+    lines += ([f"- {name.replace('_', ' ').title()}: {n}" for name, n in sorted(counts.items())]
+              or ["- None proposed yet."])
+    lines += ["", "## How to read this", "",
+              "- Decision Coverage = critical decisions that 2 or more members can explain, divided by critical "
+              "decisions that have been assessed. It is a prototype indicator, not a validated metric.",
+              "- Scores are practice feedback, not grades, and are never part of this report.",
+              '- "Not assessed" is never counted as failed.', ""]
+    return "\n".join(lines)
+
+
+def export_decisions_csv(project_id: Optional[str] = None) -> str:
+    """One row per decision: status and number of explainers, never who they are."""
+    pid = _pid(project_id)
+    cards, report = {d.id: d for d in decisions(pid)}, team_coverage(pid)
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["decision", "title", "card_status", "coverage_status", "people_who_can_explain",
+                     "source_file", "source_page"])
+    for c in report.per_decision:
+        card = cards[c.decision_id]
+        ref = card.source_refs[0] if card.source_refs else None
+        writer.writerow([c.decision_id.rsplit("-", 1)[-1], card.title, card.review_status.value, c.status,
+                         len(c.demonstrated_by), ref.file if ref else "", ref.page if ref else ""])
+    return out.getvalue()

@@ -1,8 +1,17 @@
+# secrets and local config
 .env
-*.db
-__pycache__/
-.pytest_cache/
+
+# virtual environments and caches
 .venv/
 venv/
-.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# local data created by running the app
+*.db
 uploads/
+
+# OS files
+.DS_Store
+Thumbs.db

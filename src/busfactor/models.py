@@ -3,10 +3,15 @@
 # unit tests, the database refuses to store it), explicit opt-in consent (defaults False),
 # owner_check / scenario on questions (independent owner verification and scenario-specific transfer).
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
+
+def utcnow() -> datetime:
+    """Naive UTC timestamp (datetime.utcnow() is deprecated)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 DEMO_PROJECT_ID = "P01"   # the synthetic demo; its fixed ids D01-D05 / M01-M04 exist only in this project
 
@@ -76,6 +81,7 @@ class Member(BaseModel):
     consent_assessment: bool = False    # explicit opt-in: nobody is assessed by default
     consent_mentor: bool = False
     consent_learner: bool = False
+    consent_review: bool = False        # lets a reviewer read answers the model could not score (human review)
 
 
 class InterviewQuestion(BaseModel):
@@ -105,7 +111,7 @@ class AssessmentEvidence(BaseModel):
     assessment_version: str = "v1"
     visibility: Literal["private", "team"] = "private"
     is_synthetic: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
     project_id: Optional[str] = None
 
 
@@ -122,6 +128,9 @@ class TeachingMission(BaseModel):
     retest_question_id: Optional[str] = None
     fallback_message: Optional[str] = None
     project_id: Optional[str] = None
+    accepted_at: Optional[datetime] = None   # when both people agreed (drives the reminder)
+    verified_at: Optional[datetime] = None   # when the retest was passed (drives the follow-up check)
+    followup_done: bool = False              # the spaced follow-up check was already started
 
 
 class DecisionCoverage(BaseModel):
@@ -140,7 +149,7 @@ class CoverageReport(BaseModel):
 
 
 class LogEvent(BaseModel):
-    ts: datetime = Field(default_factory=datetime.utcnow)
+    ts: datetime = Field(default_factory=utcnow)
     actor: str          # "agent" or member id
     action: str         # e.g. "evaluate_answer", "create_mission"
     detail: dict = {}
